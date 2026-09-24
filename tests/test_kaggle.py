@@ -73,6 +73,37 @@ def test_status_parses_cli_response(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "owner/kernel" in raw
 
 
+def test_status_normalizes_kaggle_enum(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = KaggleClient(executable="kaggle")
+    monkeypatch.setattr(
+        client,
+        "_run",
+        lambda args: 'owner/kernel has status "KernelWorkerStatus.COMPLETE"',
+    )
+
+    status, _ = client.status("owner/kernel")
+
+    assert status == "complete"
+
+
+def test_wait_for_terminal_status_polls(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = KaggleClient(executable="kaggle")
+    responses = iter(
+        [
+            ("queued", "queued detail"),
+            ("running", "running detail"),
+            ("complete", "complete detail"),
+        ]
+    )
+    monkeypatch.setattr(client, "status", lambda kernel: next(responses))
+    monkeypatch.setattr("krun.kaggle.time.sleep", lambda interval: None)
+
+    assert client.wait_for_terminal_status("owner/kernel") == (
+        "complete",
+        "complete detail",
+    )
+
+
 def test_download_output_builds_destination_command(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

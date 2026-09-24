@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -133,7 +134,7 @@ def run(
 
     console.print("Following Kaggle logs (Ctrl-C stops local monitoring only)...")
     client.follow_logs(job.kernel)
-    current_status, detail = client.status(job.kernel)
+    current_status, detail = client.wait_for_terminal_status(job.kernel)
     persisted_logs = client.logs(job.kernel)
     (store.directory(job.job_id) / "logs.txt").write_text(
         persisted_logs + "\n",
@@ -209,7 +210,7 @@ def run_cli() -> None:
         app()
     except KrunError as exc:
         console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(1) from exc
+        raise SystemExit(1) from exc
 
 
 if __name__ == "__main__":

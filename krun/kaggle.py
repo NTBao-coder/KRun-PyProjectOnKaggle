@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 from krun.errors import CommandError, KrunError
@@ -47,7 +48,20 @@ class KaggleClient:
         match = re.search(r'has status "([^"]+)"', output)
         if not match:
             raise CommandError(f"Could not parse Kaggle kernel status:\n{output}")
-        return match.group(1).lower(), output
+        status = match.group(1).rsplit(".", maxsplit=1)[-1].lower()
+        return status, output
+
+    def wait_for_terminal_status(
+        self,
+        kernel: str,
+        poll_interval: float = 5.0,
+    ) -> tuple[str, str]:
+        terminal_statuses = {"complete", "error", "cancelled"}
+        while True:
+            status, detail = self.status(kernel)
+            if status in terminal_statuses:
+                return status, detail
+            time.sleep(poll_interval)
 
     def logs(self, kernel: str) -> str:
         return self._run(["kernels", "logs", kernel])
