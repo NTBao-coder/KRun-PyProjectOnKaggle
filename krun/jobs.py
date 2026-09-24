@@ -77,6 +77,9 @@ class JobStore:
 
 
 def new_kernel_slug(project_name: str, job_id: str) -> str:
-    cleaned = "".join(char if char.isalnum() else "-" for char in project_name.lower())
+    cleaned = "".join(
+        char if char.isascii() and char.isalnum() else "-"
+        for char in project_name.lower()
+    )
     cleaned = "-".join(part for part in cleaned.split("-") if part) or "krun-job"
-    return f"{cleaned[:45]}-{job_id.lower()}"
+    return f"{cleaned[:24]}-{job_id.lower()}"

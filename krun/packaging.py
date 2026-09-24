@@ -29,7 +29,7 @@ DEFAULT_IGNORES = (
     "id_ed25519",
     "*.pyc",
 )
-MAX_PACKAGE_BYTES = 100 * 1024 * 1024
+MAX_PACKAGE_BYTES = 20 * 1024 * 1024
 
 
 @dataclass(frozen=True)

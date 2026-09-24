@@ -235,7 +235,7 @@ Use `--accelerator CPU` to exercise the flow without consuming GPU quota.
 ## Limitations
 
 - The embedded-project transport is intended for small projects and inputs.
-  The current package limit is 100 MB before compression. Large datasets should
+  The current package limit is 20 MB before compression. Large datasets should
   be published as a Kaggle Dataset and attached through a future integration.
 - `.krunignore` intentionally implements a small, predictable glob subset; it
   is not a complete Git ignore parser.
@@ -313,4 +313,3 @@ credentials or generated `.krun` job data. See [CONTRIBUTING.md](CONTRIBUTING.md
 ## License
 
 MIT. See [LICENSE](LICENSE).
-

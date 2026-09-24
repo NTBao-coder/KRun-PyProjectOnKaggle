@@ -81,6 +81,8 @@ def run(
             raise KrunError(f"Input path not found: {resolved}")
         resolved_inputs.append(resolved)
 
+    if gpu and accelerator:
+        raise KrunError("Use either --gpu or --accelerator, not both.")
     requested = gpu or accelerator or project.config.runtime.accelerator
     machine_shape = normalize_accelerator(requested)
     client = KaggleClient(verbose=verbose)
@@ -114,7 +116,12 @@ def run(
     )
 
     console.print("Submitting Kaggle kernel...")
-    response = client.submit(workspace, machine_shape)
+    try:
+        response = client.submit(workspace, machine_shape)
+    except KrunError:
+        job.status = "error"
+        store.save(job)
+        raise
     job.status = "submitted"
     store.save(job)
     console.print(f"[green]Submitted[/green] {job.kernel}")

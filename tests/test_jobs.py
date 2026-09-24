@@ -18,3 +18,4 @@ def test_job_store_round_trip(tmp_path: Path) -> None:
 
 def test_kernel_slug_is_safe_and_unique() -> None:
     assert new_kernel_slug("My Training_Project!", "ABC123") == "my-training-project-abc123"
+    assert new_kernel_slug("Mô hình rất dài " * 4, "ABC123").isascii()
