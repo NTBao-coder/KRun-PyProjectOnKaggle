@@ -88,11 +88,12 @@ def load_config(path: Path) -> Config:
 
 
 def write_default_config(path: Path, project_name: str, entrypoint: str) -> None:
+    requirements = "requirements.txt" if (path.parent / "requirements.txt").is_file() else None
     document = {
         "project": {"name": project_name},
         "runtime": {"accelerator": "cpu", "internet": True},
         "entrypoint": {"file": entrypoint},
-        "dependencies": {"requirements": "requirements.txt"},
+        "dependencies": {"requirements": requirements},
         "outputs": ["outputs/", "checkpoints/"],
     }
     path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
@@ -105,4 +106,3 @@ def _mapping(data: dict[str, Any], key: str, required: bool = False) -> dict[str
     if not isinstance(value, dict):
         raise ConfigError(f"{key} must be a YAML mapping.")
     return value
-

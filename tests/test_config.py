@@ -7,6 +7,7 @@ from krun.config import ConfigError, load_config, write_default_config
 
 def test_write_and_load_default_config(tmp_path: Path) -> None:
     path = tmp_path / "krun.yaml"
+    (tmp_path / "requirements.txt").touch()
 
     write_default_config(path, "sample-project", "main.py")
     config = load_config(path)
