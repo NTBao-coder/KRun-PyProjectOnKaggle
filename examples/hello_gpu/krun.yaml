@@ -1,0 +1,11 @@
+project:
+  name: hello-gpu
+runtime:
+  accelerator: gpu
+  internet: false
+entrypoint:
+  file: main.py
+dependencies:
+  requirements: null
+outputs:
+  - outputs/
