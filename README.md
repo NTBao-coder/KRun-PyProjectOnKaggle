@@ -30,7 +30,7 @@ repeatable CLI workflow while staying on Kaggle's supported API surface.
 ## Features
 
 - Preserves the local directory tree and imports.
-- Reads `requirements.txt`, or installs a local `pyproject.toml` project.
+- Reads `requirements.txt`, or installs a root/nested `pyproject.toml` project.
 - Supports CPU, NVIDIA T4, NVIDIA P100, and TPU runtime requests.
 - Forwards arguments after `--` to the Python entrypoint.
 - Includes small local inputs with `--input`.
@@ -155,6 +155,7 @@ entrypoint:
   file: train.py
 dependencies:
   requirements: requirements.txt
+  project: null
 outputs:
   - outputs/
   - checkpoints/
@@ -162,9 +163,18 @@ outputs:
 ```
 
 Set `dependencies.requirements` to `null` when the project has no requirements
-file. When it is null and `pyproject.toml` exists, the remote runner installs
-the project itself with pip. Accelerator values are `cpu`, `T4`, `P100`, or
-`TPU`; command-line values take precedence over the config.
+file. KRun installs a root `pyproject.toml` automatically. If exactly one nested
+manifest exists, such as `BackEnd/pyproject.toml`, KRun installs that project
+instead. For repositories containing several manifests, select one explicitly:
+
+```yaml
+dependencies:
+  requirements: null
+  project: BackEnd
+```
+
+`requirements` and `project` are mutually exclusive. Accelerator values are
+`cpu`, `T4`, `P100`, or `TPU`; command-line values take precedence over config.
 
 All entrypoint, input, requirements, and output paths must remain inside the
 project root.
@@ -239,6 +249,8 @@ Use `--accelerator CPU` to exercise the flow without consuming GPU quota.
   be published as a Kaggle Dataset and attached through a future integration.
 - `.krunignore` intentionally implements a small, predictable glob subset; it
   is not a complete Git ignore parser.
+- Repositories with multiple unrelated nested `pyproject.toml` files must select
+  one with `dependencies.project` unless the entrypoint is inside one of them.
 - Dependency installation requires internet access unless packages are already
   present in Kaggle's image.
 - Accelerator requests can fail because of account access, availability, or

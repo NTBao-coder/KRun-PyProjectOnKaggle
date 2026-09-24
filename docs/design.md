@@ -28,8 +28,11 @@ the ceiling or depending on undocumented endpoints.
 
 The runner recreates the project tree and makes its root both the working
 directory and the first import path. A configured requirements file is installed
-with the running Python interpreter. If no requirements file is configured but
-`pyproject.toml` exists, the project itself is installed.
+with the running Python interpreter. If no requirements file is configured,
+KRun installs a root manifest, the sole nested `pyproject.toml`, or the nested
+project selected explicitly in config. Local virtual environments are excluded:
+their binaries are not portable to Kaggle and dependency metadata is the
+repeatable source of truth.
 
 ## Job identity
 
@@ -44,4 +47,3 @@ root. Symlinks are skipped to avoid accidentally following a path outside the
 project. Known credential and private-key filenames are ignored independently
 of user ignore rules. The credential material itself remains owned by the
 Kaggle CLI.
-

@@ -28,6 +28,7 @@ class EntrypointConfig:
 @dataclass(frozen=True)
 class DependenciesConfig:
     requirements: str | None = None
+    project: str | None = None
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,13 @@ def load_config(path: Path) -> Config:
     requirements = dependencies.get("requirements")
     if requirements is not None and not isinstance(requirements, str):
         raise ConfigError("dependencies.requirements must be a string or null.")
+    dependency_project = dependencies.get("project")
+    if dependency_project is not None and not isinstance(dependency_project, str):
+        raise ConfigError("dependencies.project must be a string or null.")
+    if requirements and dependency_project:
+        raise ConfigError(
+            "dependencies.requirements and dependencies.project are mutually exclusive."
+        )
 
     outputs = raw.get("outputs", ["outputs/"])
     if not isinstance(outputs, list) or not all(isinstance(item, str) and item for item in outputs):
@@ -82,7 +90,10 @@ def load_config(path: Path) -> Config:
         project=ProjectConfig(name=name.strip()),
         runtime=RuntimeConfig(accelerator=accelerator, internet=internet),
         entrypoint=EntrypointConfig(file=entrypoint_file),
-        dependencies=DependenciesConfig(requirements=requirements),
+        dependencies=DependenciesConfig(
+            requirements=requirements,
+            project=dependency_project,
+        ),
         outputs=outputs,
     )
 

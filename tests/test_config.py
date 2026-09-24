@@ -36,3 +36,28 @@ def test_load_config_rejects_non_boolean_internet(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigError, match="runtime.internet"):
         load_config(path)
+
+
+def test_load_config_supports_nested_dependency_project(tmp_path: Path) -> None:
+    path = tmp_path / "krun.yaml"
+    path.write_text(
+        "project:\n  name: demo\ndependencies:\n  project: BackEnd\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(path)
+
+    assert config.dependencies.project == "BackEnd"
+    assert config.dependencies.requirements is None
+
+
+def test_load_config_rejects_two_dependency_sources(tmp_path: Path) -> None:
+    path = tmp_path / "krun.yaml"
+    path.write_text(
+        "project:\n  name: demo\ndependencies:\n"
+        "  requirements: requirements.txt\n  project: BackEnd\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="mutually exclusive"):
+        load_config(path)

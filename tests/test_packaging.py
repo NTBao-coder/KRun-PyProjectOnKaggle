@@ -87,3 +87,20 @@ def test_explicit_input_overrides_ignore_file(tmp_path: Path) -> None:
 
     assert completed.returncode == 0, completed.stderr
     assert (remote_working / "krun_project" / "data" / "sample.csv").is_file()
+
+
+def test_runner_installs_nested_dependency_project(tmp_path: Path) -> None:
+    root = tmp_path / "source"
+    root.mkdir()
+    create_sample_project(root)
+    backend = root / "BackEnd"
+    backend.mkdir()
+    (backend / "pyproject.toml").write_text(
+        "[project]\nname = 'nested-demo'\nversion = '0.1.0'\n",
+        encoding="utf-8",
+    )
+
+    result = prepare_workspace(discover_project(root), tmp_path / "workspace", [])
+    runner = result.runner.read_text(encoding="utf-8")
+
+    assert "DEPENDENCY_PROJECT = 'BackEnd'" in runner

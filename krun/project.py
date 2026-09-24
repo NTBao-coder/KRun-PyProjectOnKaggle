@@ -38,13 +38,13 @@ def discover_project(start: Path, entrypoint_override: Path | None = None) -> Pr
         if not requirements.is_file():
             raise KrunError(f"Requirements file not found: {requirements}")
 
-    pyproject_path = root / "pyproject.toml"
+    pyproject_path = _find_dependency_project(root, config, entrypoint)
     return Project(
         root=root,
         config=config,
         entrypoint=entrypoint,
         requirements=requirements,
-        pyproject=pyproject_path if pyproject_path.is_file() else None,
+        pyproject=pyproject_path,
     )
 
 
@@ -63,3 +63,36 @@ def resolve_project_path(root: Path, path: Path, label: str) -> Path:
     if not resolved.is_relative_to(root.resolve()):
         raise KrunError(f"{label.capitalize()} must be inside the project root: {path}")
     return resolved
+
+
+def _find_dependency_project(
+    root: Path,
+    config: Config,
+    entrypoint: Path,
+) -> Path | None:
+    configured = config.dependencies.project
+    if configured:
+        path = resolve_project_path(root, Path(configured), "dependency project")
+        path = path / "pyproject.toml" if path.is_dir() else path
+        if path.name != "pyproject.toml" or not path.is_file():
+            raise KrunError(f"Dependency project not found: {path}")
+        return path
+
+    root_manifest = root / "pyproject.toml"
+    if root_manifest.is_file():
+        return root_manifest
+
+    ignored_parts = {".git", ".krun", ".venv", "venv", "__pycache__"}
+    candidates = sorted(
+        path
+        for path in root.rglob("pyproject.toml")
+        if not any(part in ignored_parts for part in path.relative_to(root).parts)
+    )
+    if len(candidates) == 1:
+        return candidates[0]
+
+    entrypoint_parents = {entrypoint.parent, *entrypoint.parents}
+    ancestors = [path for path in candidates if path.parent in entrypoint_parents]
+    if ancestors:
+        return max(ancestors, key=lambda path: len(path.parts))
+    return None
