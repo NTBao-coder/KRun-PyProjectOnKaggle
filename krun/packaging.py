@@ -19,10 +19,14 @@ DEFAULT_IGNORES = (
     ".pytest_cache",
     ".mypy_cache",
     ".ruff_cache",
-    ".env",
+    ".env*",
     "kaggle.json",
     "*.pem",
     "*.key",
+    "*.p12",
+    "*.pfx",
+    "id_rsa",
+    "id_ed25519",
     "*.pyc",
 )
 MAX_PACKAGE_BYTES = 100 * 1024 * 1024
@@ -39,9 +43,14 @@ def prepare_workspace(
     project: Project,
     workspace: Path,
     arguments: list[str],
+    input_paths: list[Path] | None = None,
 ) -> PackageResult:
     workspace.mkdir(parents=True, exist_ok=True)
     files = collect_project_files(project.root)
+    for input_path in input_paths or []:
+        candidates = input_path.rglob("*") if input_path.is_dir() else (input_path,)
+        files.extend(path for path in candidates if path.is_file() and not path.is_symlink())
+    files = sorted(set(files))
     source_bytes = sum(path.stat().st_size for path in files)
     if source_bytes > MAX_PACKAGE_BYTES:
         size_mb = source_bytes / (1024 * 1024)
@@ -146,7 +155,7 @@ project = working / "krun_project"
 artifacts = working / "krun_outputs"
 project.mkdir(parents=True, exist_ok=True)
 with tarfile.open(fileobj=io.BytesIO(base64.b64decode(PAYLOAD)), mode="r:gz") as archive:
-    archive.extractall(project, filter="data")
+    archive.extractall(project)
 
 if REQUIREMENTS:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", str(project / REQUIREMENTS)])

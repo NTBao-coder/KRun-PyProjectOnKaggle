@@ -74,10 +74,12 @@ def run(
 ) -> None:
     """Package and submit a Python project to Kaggle."""
     project = discover_project(Path.cwd(), entrypoint)
+    resolved_inputs: list[Path] = []
     for input_path in input_paths or []:
         resolved = resolve_project_path(project.root, input_path, "input")
         if not resolved.exists():
             raise KrunError(f"Input path not found: {resolved}")
+        resolved_inputs.append(resolved)
 
     requested = gpu or accelerator or project.config.runtime.accelerator
     machine_shape = normalize_accelerator(requested)
@@ -96,7 +98,12 @@ def run(
     workspace = store.directory(job.job_id) / "workspace"
 
     console.print("Scanning project...")
-    package = prepare_workspace(project, workspace, list(ctx.args))
+    package = prepare_workspace(
+        project,
+        workspace,
+        list(ctx.args),
+        input_paths=resolved_inputs,
+    )
     console.print(f"[green]OK[/green] Entrypoint: {project.entrypoint.relative_to(project.root)}")
     console.print(f"[green]OK[/green] {package.file_count} project files packaged")
     write_kernel_metadata(

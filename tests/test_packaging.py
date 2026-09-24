@@ -56,3 +56,34 @@ def test_generated_runner_preserves_imports_and_collects_outputs(tmp_path: Path)
     assert completed.returncode == 0, completed.stderr
     artifact = remote_working / "krun_outputs" / "outputs" / "result.txt"
     assert artifact.read_text(encoding="utf-8") == "local import works"
+
+
+def test_explicit_input_overrides_ignore_file(tmp_path: Path) -> None:
+    root = tmp_path / "source"
+    root.mkdir()
+    create_sample_project(root)
+    data = root / "data"
+    data.mkdir()
+    (data / "sample.csv").write_text("value\n1\n", encoding="utf-8")
+    (root / ".krunignore").write_text("data/\n", encoding="utf-8")
+
+    workspace = tmp_path / "workspace"
+    result = prepare_workspace(
+        discover_project(root),
+        workspace,
+        [],
+        input_paths=[data],
+    )
+    remote_working = tmp_path / "remote"
+    env = {**os.environ, "KRUN_WORKING_DIR": str(remote_working)}
+
+    completed = subprocess.run(
+        [sys.executable, str(result.runner)],
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert (remote_working / "krun_project" / "data" / "sample.csv").is_file()
