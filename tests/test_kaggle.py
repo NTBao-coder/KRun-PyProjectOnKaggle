@@ -57,3 +57,37 @@ def test_submit_builds_safe_argument_list(tmp_path: Path, monkeypatch: pytest.Mo
         "--accelerator",
         "NvidiaTeslaT4",
     ]
+
+
+def test_status_parses_cli_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = KaggleClient(executable="kaggle")
+    monkeypatch.setattr(
+        client,
+        "_run",
+        lambda args: 'owner/kernel has status "running"',
+    )
+
+    status, raw = client.status("owner/kernel")
+
+    assert status == "running"
+    assert "owner/kernel" in raw
+
+
+def test_download_output_builds_destination_command(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands: list[list[str]] = []
+    client = KaggleClient(executable="kaggle")
+    monkeypatch.setattr(client, "_run", lambda args: commands.append(args) or "done")
+
+    client.download_output("owner/kernel", tmp_path / "output")
+
+    assert commands == [[
+        "kernels",
+        "output",
+        "owner/kernel",
+        "--path",
+        str(tmp_path / "output"),
+        "--force",
+    ]]

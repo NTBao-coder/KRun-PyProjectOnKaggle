@@ -60,6 +60,18 @@ class JobStore:
         except (json.JSONDecodeError, TypeError) as exc:
             raise KrunError(f"Invalid job metadata: {path}") from exc
 
+    def latest(self) -> Job:
+        if not self.root.is_dir():
+            raise KrunError("No krun jobs were found in this project.")
+        job_ids = sorted(
+            path.name
+            for path in self.root.iterdir()
+            if path.is_dir() and (path / "metadata.json").is_file()
+        )
+        if not job_ids:
+            raise KrunError("No krun jobs were found in this project.")
+        return self.load(job_ids[-1])
+
     def directory(self, job_id: str) -> Path:
         return self.root / job_id
 
@@ -68,4 +80,3 @@ def new_kernel_slug(project_name: str, job_id: str) -> str:
     cleaned = "".join(char if char.isalnum() else "-" for char in project_name.lower())
     cleaned = "-".join(part for part in cleaned.split("-") if part) or "krun-job"
     return f"{cleaned[:45]}-{job_id.lower()}"
-

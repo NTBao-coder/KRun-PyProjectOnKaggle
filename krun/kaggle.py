@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -40,6 +41,40 @@ class KaggleClient:
         if accelerator:
             args.extend(["--accelerator", accelerator])
         return self._run(args)
+
+    def status(self, kernel: str) -> tuple[str, str]:
+        output = self._run(["kernels", "status", kernel])
+        match = re.search(r'has status "([^"]+)"', output)
+        if not match:
+            raise CommandError(f"Could not parse Kaggle kernel status:\n{output}")
+        return match.group(1).lower(), output
+
+    def logs(self, kernel: str) -> str:
+        return self._run(["kernels", "logs", kernel])
+
+    def follow_logs(self, kernel: str) -> None:
+        command = [self.executable, "kernels", "logs", "--follow", kernel]
+        try:
+            completed = subprocess.run(command, check=False)
+        except OSError as exc:
+            raise CommandError(f"Could not start Kaggle CLI: {exc}") from exc
+        if completed.returncode != 0:
+            raise CommandError(
+                "Kaggle log streaming failed. Run 'krun logs <job-id>' to retry."
+            )
+
+    def download_output(self, kernel: str, destination: Path) -> str:
+        destination.mkdir(parents=True, exist_ok=True)
+        return self._run(
+            [
+                "kernels",
+                "output",
+                kernel,
+                "--path",
+                str(destination),
+                "--force",
+            ]
+        )
 
     def _run(self, args: list[str]) -> str:
         command = [self.executable, *args]
@@ -133,4 +168,3 @@ def has_credentials() -> bool:
             Path.home() / ".kaggle" / "kaggle.json",
         )
     )
-

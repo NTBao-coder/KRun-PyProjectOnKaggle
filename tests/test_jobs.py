@@ -13,6 +13,7 @@ def test_job_store_round_trip(tmp_path: Path) -> None:
 
     assert loaded == created
     assert store.directory(created.job_id).name == created.job_id
+    assert store.latest() == created
 
 
 def test_kernel_slug_is_safe_and_unique() -> None:

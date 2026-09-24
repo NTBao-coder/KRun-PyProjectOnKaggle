@@ -10,7 +10,7 @@ from krun.errors import KrunError
 from krun.jobs import JobStore, new_kernel_slug
 from krun.kaggle import KaggleClient, kaggle_username, normalize_accelerator, write_kernel_metadata
 from krun.packaging import prepare_workspace
-from krun.project import discover_project, resolve_project_path
+from krun.project import discover_project, find_project_root, resolve_project_path
 
 console = Console()
 
@@ -69,6 +69,7 @@ def run(
     ),
     owner: Optional[str] = typer.Option(None, "--owner", help="Kaggle username."),
     input_paths: Optional[list[Path]] = typer.Option(None, "--input", help="Local input inside the project."),
+    detach: bool = typer.Option(False, "--detach", help="Return after submitting the job."),
     verbose: bool = typer.Option(False, "--verbose", help="Show additional command output."),
 ) -> None:
     """Package and submit a Python project to Kaggle."""
@@ -113,6 +114,80 @@ def run(
     console.print(f"Job ID: {job.job_id}")
     if verbose and response:
         console.print(response)
+    if detach:
+        return
+
+    console.print("Following Kaggle logs (Ctrl-C stops local monitoring only)...")
+    client.follow_logs(job.kernel)
+    current_status, detail = client.status(job.kernel)
+    persisted_logs = client.logs(job.kernel)
+    (store.directory(job.job_id) / "logs.txt").write_text(
+        persisted_logs + "\n",
+        encoding="utf-8",
+    )
+    job.status = current_status
+    store.save(job)
+    if current_status != "complete":
+        raise KrunError(f"Kaggle job finished with status '{current_status}'.\n{detail}")
+
+    destination = store.directory(job.job_id) / "output"
+    client.download_output(job.kernel, destination)
+    console.print("[green]Completed successfully.[/green]")
+    console.print(f"Downloaded artifacts: {destination}")
+
+
+@app.command()
+def status(
+    job_id: Optional[str] = typer.Argument(None, help="Job ID; defaults to the latest job."),
+    verbose: bool = typer.Option(False, "--verbose", help="Show the full Kaggle response."),
+) -> None:
+    """Show the current state of a Kaggle job."""
+    store = JobStore(find_project_root(Path.cwd()))
+    job = store.load(job_id) if job_id else store.latest()
+    client = KaggleClient(verbose=verbose)
+    client.validate_environment()
+    current_status, detail = client.status(job.kernel)
+    job.status = current_status
+    store.save(job)
+    console.print(f"Job: {job.job_id}")
+    console.print(f"Kernel: {job.kernel}")
+    console.print(f"Status: [bold]{current_status.upper()}[/bold]")
+    if verbose:
+        console.print(detail)
+
+
+@app.command()
+def logs(
+    job_id: Optional[str] = typer.Argument(None, help="Job ID; defaults to the latest job."),
+    follow: bool = typer.Option(False, "--follow", "-f", help="Stream logs until execution ends."),
+) -> None:
+    """Print logs for a Kaggle job."""
+    store = JobStore(find_project_root(Path.cwd()))
+    job = store.load(job_id) if job_id else store.latest()
+    client = KaggleClient()
+    client.validate_environment()
+    if follow:
+        client.follow_logs(job.kernel)
+        return
+
+    content = client.logs(job.kernel)
+    (store.directory(job.job_id) / "logs.txt").write_text(content + "\n", encoding="utf-8")
+    console.print(content)
+
+
+@app.command()
+def output(
+    job_id: Optional[str] = typer.Argument(None, help="Job ID; defaults to the latest job."),
+    path: Optional[Path] = typer.Option(None, "--path", help="Download destination."),
+) -> None:
+    """Download output files from a completed Kaggle job."""
+    store = JobStore(find_project_root(Path.cwd()))
+    job = store.load(job_id) if job_id else store.latest()
+    destination = path.resolve() if path else store.directory(job.job_id) / "output"
+    client = KaggleClient()
+    client.validate_environment()
+    client.download_output(job.kernel, destination)
+    console.print(f"Downloaded artifacts: {destination}")
 
 
 def run_cli() -> None:
