@@ -69,18 +69,103 @@ The local state layout is:
 
 ## Requirements
 
-- Python 3.10 or newer.
-- The official [Kaggle CLI](https://github.com/Kaggle/kaggle-cli).
+- Docker, or Python 3.10 or newer for a native installation.
 - A Kaggle account with access to the requested accelerator.
 - Internet access when the remote job needs to install dependencies.
 
 ## Installation
 
-Clone the repository and install it in an isolated environment:
+### Docker (recommended)
+
+Docker keeps KRun and the official Kaggle CLI isolated from your project. Build
+the image once; matching the host UID/GID ensures downloaded `.krun` files are
+owned by your normal user:
 
 ```bash
-git clone <repository-url> krun
-cd krun
+git clone https://github.com/nhminh107/KRun-PyProjectOnKaggle.git
+cd KRun-PyProjectOnKaggle
+docker build \
+  --build-arg USER_ID="$(id -u)" \
+  --build-arg GROUP_ID="$(id -g)" \
+  -t krun:local .
+```
+
+On Windows PowerShell, Docker Desktop handles mounted-file ownership, so the
+default image user is sufficient:
+
+```powershell
+docker build -t krun:local .
+docker run --rm -it `
+  -v "${PWD}:/workspace" `
+  -v "${HOME}/.kaggle:/home/krun/.kaggle" `
+  krun:local --version
+```
+
+Create the host credential directory, then authenticate with either the native
+Kaggle CLI or the container:
+
+```bash
+mkdir -p "$HOME/.kaggle"
+docker run --rm -it \
+  -v "$HOME/.kaggle:/home/krun/.kaggle" \
+  --entrypoint kaggle \
+  krun:local auth login
+```
+
+From any Python project, use the image like the normal `krun` command:
+
+```bash
+cd /path/to/my-project
+docker run --rm -it \
+  -v "$PWD:/workspace" \
+  -v "$HOME/.kaggle:/home/krun/.kaggle" \
+  krun:local init --entrypoint train.py
+
+docker run --rm -it \
+  -v "$PWD:/workspace" \
+  -v "$HOME/.kaggle:/home/krun/.kaggle" \
+  krun:local run train.py --gpu T4
+```
+
+For the shortest day-to-day command, add this function to `~/.bashrc` or
+`~/.zshrc`:
+
+```bash
+krun() {
+  docker run --rm -it \
+    -v "$PWD:/workspace" \
+    -v "$HOME/.kaggle:/home/krun/.kaggle" \
+    krun:local "$@"
+}
+```
+
+Open a new shell, then use KRun normally:
+
+```bash
+krun init --entrypoint train.py
+krun run train.py --gpu T4
+```
+
+For API-token authentication instead of a credential directory:
+
+```bash
+docker run --rm -it \
+  -e KAGGLE_API_TOKEN \
+  -e KAGGLE_USERNAME \
+  -v "$PWD:/workspace" \
+  krun:local run train.py --gpu T4
+```
+
+Remove `-it` in CI or other non-interactive environments.
+
+### Native Python
+
+The Python package includes the official Kaggle CLI. Install both with one
+command in an isolated environment:
+
+```bash
+git clone https://github.com/nhminh107/KRun-PyProjectOnKaggle.git
+cd KRun-PyProjectOnKaggle
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
@@ -105,7 +190,8 @@ legacy `~/.kaggle/kaggle.json` file. Follow Kaggle's official authentication
 instructions and never place a token in `krun.yaml` or source control.
 
 With token-only authentication, pass `--owner YOUR_KAGGLE_USERNAME` if `krun`
-cannot determine the account name locally.
+cannot determine the account name locally. Docker users should mount the whole
+`.kaggle` directory read-write because OAuth may refresh its cached token.
 
 ## Quick start
 
@@ -301,11 +387,18 @@ command construction, status parsing, and job metadata.
 
 ## Docker
 
-The MVP intentionally has no Dockerfile. `krun` is a thin local CLI and its
-actual execution environment is Kaggle's managed image; a local container would
-not reproduce Kaggle GPU access or quotas. A Docker image may become useful
-later for release smoke tests, but it adds little value to the current user
-workflow.
+The image contains only KRun, its Python dependencies, and the official Kaggle
+CLI. Your source stays in the host project and is mounted at `/workspace`; job
+metadata and downloaded artifacts therefore persist in the project's `.krun/`
+directory. Kaggle still executes the submitted job remotely—Docker does not
+emulate Kaggle hardware or bypass its quotas.
+
+Useful checks:
+
+```bash
+docker run --rm krun:local --version
+docker run --rm krun:local --help
+```
 
 ## Roadmap
 
