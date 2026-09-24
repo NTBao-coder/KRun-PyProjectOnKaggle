@@ -28,12 +28,17 @@ ENV HOME=/home/krun \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-RUN getent group "$GROUP_ID" >/dev/null || groupadd --gid "$GROUP_ID" krun \
-    && useradd --uid "$USER_ID" --gid "$GROUP_ID" --create-home krun
+RUN set -eu; \
+    if ! getent group "$GROUP_ID" >/dev/null; then groupadd --gid "$GROUP_ID" krun; fi; \
+    if ! getent passwd "$USER_ID" >/dev/null; then \
+        useradd --uid "$USER_ID" --gid "$GROUP_ID" --create-home krun; \
+    fi; \
+    mkdir -p /home/krun /workspace; \
+    chown "$USER_ID:$GROUP_ID" /home/krun /workspace
 
 COPY --from=builder /opt/venv /opt/venv
 
-USER krun
+USER ${USER_ID}:${GROUP_ID}
 WORKDIR /workspace
 
 ENTRYPOINT ["krun"]

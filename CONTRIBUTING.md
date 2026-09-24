@@ -2,7 +2,7 @@
 
 Thanks for helping improve `krun`.
 
-1. Create an isolated Python 3.10+ environment.
+1. Create an isolated Python 3.11+ environment.
 2. Install the project with `python -m pip install -e '.[dev]'`.
 3. Make a focused change with tests.
 4. Run `python -m pytest -q`.
@@ -14,4 +14,3 @@ test.
 
 By submitting a contribution, you agree that it may be distributed under the
 MIT License.
-

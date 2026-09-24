@@ -69,13 +69,19 @@ The local state layout is:
 
 ## Requirements
 
-- Docker, or Python 3.10 or newer for a native installation.
+- Docker, or Python 3.11 or newer for a native installation (required by Kaggle CLI).
 - A Kaggle account with access to the requested accelerator.
 - Internet access when the remote job needs to install dependencies.
 
 ## Installation
 
 ### Docker (recommended)
+
+Install Git and Docker first. On Windows/macOS, start Docker Desktop (Linux
+containers); on Linux, ensure your user can access the Docker daemon.
+`docker info` must succeed before continuing. No host Python or GPU is needed.
+
+#### Linux and macOS (Bash/Zsh)
 
 Docker keeps KRun and the official Kaggle CLI isolated from your project. Build
 the image once; matching the host UID/GID ensures downloaded `.krun` files are
@@ -90,17 +96,6 @@ docker build \
   -t krun:local .
 ```
 
-On Windows PowerShell, Docker Desktop handles mounted-file ownership, so the
-default image user is sufficient:
-
-```powershell
-docker build -t krun:local .
-docker run --rm -it `
-  -v "${PWD}:/workspace" `
-  -v "${HOME}/.kaggle:/home/krun/.kaggle" `
-  krun:local --version
-```
-
 Create the host credential directory, then authenticate with either the native
 Kaggle CLI or the container:
 
@@ -109,8 +104,28 @@ mkdir -p "$HOME/.kaggle"
 docker run --rm -it \
   -v "$HOME/.kaggle:/home/krun/.kaggle" \
   --entrypoint kaggle \
-  krun:local auth login
+  krun:local auth login --no-launch-browser
 ```
+
+Open the printed URL in your host browser, sign in, approve access, then paste
+the verification code back into this terminal. No container port forwarding is
+needed. If the CLI says you are already logged in, continue to the next step;
+use `--force` only when you want to sign in again.
+
+First test the included example from the cloned repository (no file editing
+needed):
+
+```bash
+docker run --rm krun:local --version
+docker run --rm -it \
+  -v "$PWD/examples/hello_gpu:/workspace" \
+  -v "$HOME/.kaggle:/home/krun/.kaggle" \
+  krun:local run main.py --accelerator CPU
+```
+
+Success means `Completed successfully.` and a downloaded `system.json` under
+`examples/hello_gpu/.krun/jobs/<job-id>/output/krun_outputs/outputs/`.
+Try `--gpu T4` after the CPU check passes, if your account has GPU access.
 
 From any Python project, use the image like the normal `krun` command:
 
@@ -146,7 +161,50 @@ krun init --entrypoint train.py
 krun run train.py --gpu T4
 ```
 
+Run these commands from the project root, with an existing `train.py`. Skip
+`init` when `krun.yaml` already exists. Mount the entire project, not just the
+script directory, so sibling imports and data files remain accessible. Run
+`status`, `logs`, and `output` from that same project using the same mounts.
+
+#### Windows (PowerShell)
+
+Use Docker Desktop in Linux-container mode. Run the following in PowerShell:
+
+```powershell
+git clone https://github.com/nhminh107/KRun-PyProjectOnKaggle.git
+cd KRun-PyProjectOnKaggle
+docker build -t krun:local .
+New-Item -ItemType Directory -Force -Path "$HOME/.kaggle" | Out-Null
+docker run --rm -it `
+  -v "${HOME}/.kaggle:/home/krun/.kaggle" `
+  --entrypoint kaggle krun:local auth login --no-launch-browser
+```
+
+Open the printed URL in your browser and paste the verification code into the
+terminal. Then define a wrapper for this PowerShell session and run the example:
+
+```powershell
+function krun {
+  docker run --rm -it `
+    -v "${PWD}:/workspace" `
+    -v "${HOME}/.kaggle:/home/krun/.kaggle" `
+    krun:local @args
+}
+cd examples/hello_gpu
+krun run main.py --accelerator CPU
+```
+
+For your own project, change to its root and run `krun init --entrypoint train.py`
+once, then `krun run train.py --gpu T4`. Add the function to your PowerShell
+profile if you want it available in future sessions.
+
+#### API tokens and CI
+
 For API-token authentication instead of a credential directory:
+
+Set `KAGGLE_API_TOKEN` and `KAGGLE_USERNAME` in your shell environment or CI
+secret settings first. The `-e NAME` flags below forward existing variables;
+they do not create a token. Use your Kaggle username, not your display name.
 
 ```bash
 docker run --rm -it \
@@ -157,6 +215,19 @@ docker run --rm -it \
 ```
 
 Remove `-it` in CI or other non-interactive environments.
+
+#### Troubleshooting
+
+- `Cannot connect to the Docker daemon`: start Docker and retry `docker info`.
+- `permission denied` on `/workspace` or credentials: on Linux rebuild with
+  your current UID/GID and check host directory permissions. Create
+  `$HOME/.kaggle` before mounting it; do not make credential files world-readable.
+- Missing credentials: repeat the login command and keep the credential mount
+  on every run. Token users must also forward the environment variables.
+- Unknown owner: add `--owner YOUR_KAGGLE_USERNAME` to `krun run`.
+- Authentication, quota, or accelerator errors: resolve the reported Kaggle
+  account issue; a successful Docker build alone does not validate Kaggle access.
+- To update KRun, pull repository updates and rebuild `krun:local`.
 
 ### Native Python
 
@@ -186,8 +257,9 @@ kaggle auth login
 ```
 
 The CLI also supports `KAGGLE_API_TOKEN`, `~/.kaggle/access_token`, and the
-legacy `~/.kaggle/kaggle.json` file. Follow Kaggle's official authentication
-instructions and never place a token in `krun.yaml` or source control.
+legacy `~/.kaggle/kaggle.json` file. Follow Kaggle's official
+[authentication instructions](https://github.com/Kaggle/kaggle-cli/blob/main/docs/README.md#authentication)
+and never place a token in `krun.yaml` or source control.
 
 With token-only authentication, pass `--owner YOUR_KAGGLE_USERNAME` if `krun`
 cannot determine the account name locally. Docker users should mount the whole

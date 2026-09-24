@@ -7,7 +7,7 @@ name = "krun-cli"
 version = "0.1.0"
 description = "Make Kaggle GPU feel like a local Python runtime"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [{ name = "krun contributors" }]
 dependencies = [
