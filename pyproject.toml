@@ -22,7 +22,7 @@ classifiers = [
 ]
 
 [project.scripts]
-krun = "krun.cli:app"
+krun = "krun.cli:run_cli"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
@@ -33,4 +33,3 @@ include = ["krun*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
-
