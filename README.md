@@ -1,14 +1,23 @@
 # KRun
 
-Run Python scripts, packages and notebooks on Kaggle from your terminal.
-KRun packages the project, submits a private Kaggle job, follows its status and
-logs, then downloads the results. Your Kaggle account's quotas and accelerator
-availability apply. Docker runs the local CLI; Kaggle runs your workload.
+Run Python scripts, modules, and notebooks on Kaggle from your terminal.
+KRun packages your project, submits a private job, follows its logs, and downloads
+the results. You do not need a file named `main.py` or a `krun.yaml` configuration.
 
-## Start here
+**Docker runs the CLI on your computer. Kaggle runs your project.**
+With the Docker workflow, your computer does not need Python or a GPU.
+Kaggle account quotas, runtime limits, and accelerator availability still apply.
 
-Install Git and Docker. Start Docker Desktop on Windows/macOS, or Docker Engine
-on Linux. `docker info` must work. Host Python and a local GPU are not required.
+## Step 1: Clone, start Docker, and sign in
+
+You need Git, Docker, and a Kaggle account. Start Docker Desktop on Windows/macOS
+or Docker Engine on Linux, then check:
+
+```bash
+docker info
+```
+
+If this fails, fix Docker access before continuing.
 
 ### Linux / macOS
 
@@ -16,20 +25,17 @@ on Linux. `docker info` must work. Host Python and a local GPU are not required.
 git clone https://github.com/nhminh107/KRun-PyProjectOnKaggle.git
 cd KRun-PyProjectOnKaggle
 ./bin/krun login
-./bin/krun demo sales-report
+./bin/krun doctor
 ```
 
-The launcher builds the image on first use. Login prints a browser URL: open
-it, authorize your Kaggle account and paste the verification code into the
-terminal. Existing credentials in `~/.kaggle` are reused.
+On first use, the launcher builds the Docker image. This needs internet access
+and may take a few minutes. Login prints a URL: open it in your browser,
+authorize your Kaggle account, and paste the verification code into the terminal.
+Existing credentials in `~/.kaggle` are reused.
 
-The CPU demo reads bundled order CSV data and writes four reports. Expect
-`total_revenue: "213.00"`, eight paid orders and two rejected rows. After
-`Completed successfully.`, find the files at:
-
-```text
-examples/sales_report/.krun/jobs/<job-id>/output/krun_outputs/outputs/
-```
+**Run the `./bin/krun` commands below from the cloned KRun repository.**
+You do not need to switch into an external project. Replace `/path/to/...`
+with real paths on your computer, and quote paths containing spaces.
 
 ### Windows PowerShell
 
@@ -39,33 +45,283 @@ Start Docker Desktop in Linux-container mode:
 git clone https://github.com/nhminh107/KRun-PyProjectOnKaggle.git
 cd KRun-PyProjectOnKaggle
 .\krun.ps1 login
+.\krun.ps1 doctor
 .\krun.ps1 demo sales-report
 ```
 
-If your PowerShell execution policy blocks local scripts, invoke the launcher
-with `powershell -ExecutionPolicy Bypass -File .\krun.ps1 login` (or the demo
-command). This changes policy for that process only. Linux is locally tested;
-Windows/macOS CI is configured but those platforms must be verified before a
-release claims full support.
+For the examples below, replace `./bin/krun` with `.krun.ps1`.
+If execution policy blocks the script, use
+`powershell -ExecutionPolicy Bypass -File .\krun.ps1 login`;
+this changes policy only for that process.
+Linux has been tested locally. Windows/macOS CI is configured, but its results
+have not yet been verified.
 
-## Run your project
+## Step 2: Try a small CPU demo
 
-No YAML is needed. The launcher accepts a path to a project outside this repo:
+This bundled demo does not need a GPU, model downloads, or external data:
 
 ```bash
-./bin/krun run /path/to/my-project/main.py
-./bin/krun run /path/to/my-project/scripts/report.py --project /path/to/my-project
-./bin/krun run /path/to/my-project/main.py --gpu T4 -- --epochs 10
+./bin/krun demo sales-report
 ```
 
-CPU is the default unless `krun.yaml` specifies otherwise. Use `--gpu T4`,
-`--gpu P100`, or `--accelerator TPU` when your Kaggle account supports it.
-KRun never silently switches your requested accelerator to CPU.
+Expected results: `total_revenue: "213.00"`, eight paid orders, and two
+rejected rows. After `Completed successfully.`, find the four reports here:
 
-An explicit `--project` is useful for monorepos and scripts without a project
-marker. Otherwise KRun looks for `krun.yaml` or existing `.krun/jobs`, then
-`pyproject.toml`, `requirements.txt` or Git metadata, then uses the script's
-directory. Mount only the project you intend to upload.
+```text
+examples/sales_report/.krun/jobs/<job-id>/output/krun_outputs/outputs/
+```
+
+Replace `<job-id>` with the ID printed for your run.
+
+### Test two entrypoints, shared imports, and requirements.txt
+
+The [multi-entry CPU demo](examples/cpu_multi_entry/README.md) contains YAML data,
+a `requirements.txt`, and a shared `inventory/` package.
+It has no `main.py` or `krun.yaml`:
+
+```bash
+./bin/krun run examples/cpu_multi_entry/stock_report.py \
+  --project examples/cpu_multi_entry --internet
+
+./bin/krun run examples/cpu_multi_entry/reorder_report.py \
+  --project examples/cpu_multi_entry --internet
+```
+
+KRun automatically installs PyYAML from the requirements file on Kaggle.
+Each command creates a separate job:
+
+| Entrypoint | Output file | Expected result |
+| --- | --- | --- |
+| `stock_report.py` | `stock_summary.json` | 3 products, 16 units, value `"181.00"` |
+| `reorder_report.py` | `reorder_summary.json` | Order 6 Pens and 3 Mice: 9 units total |
+
+Results are saved under
+`examples/cpu_multi_entry/.krun/jobs/<job-id>/output/krun_outputs/outputs/`.
+Add `--dry-run` to preview packaging without submitting a job.
+
+## Step 3: Run your project
+
+### Python scripts
+
+You do not need to turn your code into a notebook or rename it to `main.py`:
+
+```bash
+./bin/krun run /path/to/my-project/report.py \
+  --project /path/to/my-project --internet
+```
+
+`--project` selects the project root to upload. Local modules, dependency
+files, and inputs needed by your code must be inside that directory.
+Set it explicitly when starting out to avoid selecting the wrong root.
+
+CPU is the default unless your YAML configuration selects another accelerator.
+To request a GPU:
+
+```bash
+./bin/krun run /path/to/my-project/train.py \
+  --project /path/to/my-project --gpu T4 --internet --timeout 14400
+```
+
+You can also request `--gpu P100` or `--accelerator TPU` when your account
+supports them. KRun does not silently fall back to CPU. Your code must still use
+the accelerator correctly; requesting a GPU does not make CPU-only code use it.
+
+Put KRun options before `--` and your script's arguments after it:
+
+```bash
+./bin/krun run /path/to/my-project/train.py \
+  --project /path/to/my-project --gpu T4 --internet -- --epochs 10
+```
+
+Your script must implement `--epochs`; KRun only forwards the argument.
+
+### Modules and notebooks
+
+```bash
+./bin/krun demo module
+./bin/krun demo notebook
+
+./bin/krun run -m my_package.report \
+  --project /path/to/my-project -- --count 10
+
+./bin/krun run /path/to/my-project/analysis.ipynb \
+  --project /path/to/my-project --internet --cell-timeout 900
+```
+
+Modules run with package context, supporting relative imports. The module must
+be a local `.py` file or a package with `__main__.py`, rooted at the project
+directory or its `src/` directory.
+
+Python notebooks run through Jupyter/nbclient. The original file is not modified.
+The executed notebook is saved under `output/krun_outputs/notebooks/`,
+including cell results before a failure. The remote environment needs
+`nbclient`, `nbformat`, and a Python kernel; declare them if they are not available.
+
+The working directory defaults to the project root. Use `--cwd notebooks`
+if your code expects relative paths from that folder. Notebooks do not accept
+arguments after `--`. Desktop GUIs, interactive prompts, and long-lived servers
+are not suitable batch workloads.
+
+## Step 4: Declare dependencies
+
+**KRun installs packages automatically, but it needs a dependency list.**
+It does not guess package names or versions from imports, or copy your local
+venv/Conda environment.
+
+Without YAML, KRun first looks for a root `requirements.txt`. Otherwise,
+it looks for a root or suitable nested `pyproject.toml`. If multiple projects
+are found, choose explicitly:
+
+```bash
+./bin/krun run /path/to/my-project/report.py \
+  --project /path/to/my-project \
+  --requirements /path/to/my-project/requirements.txt --internet
+
+./bin/krun run /path/to/my-project/backend/report.py \
+  --project /path/to/my-project \
+  --dependency-project /path/to/my-project/backend --internet
+```
+
+If you only have a Python file, request packages directly:
+
+```bash
+./bin/krun run /path/to/my-project/report.py \
+  --project /path/to/my-project --internet --package 'PyYAML==6.0.2'
+```
+
+Repeat `--package` for additional libraries. They install **on Kaggle**,
+not in your host Python or the local CLI image. Enable `--internet` when
+installing packages or downloading models/data; use `--no-internet` for offline jobs.
+
+Pinning versions helps reproducibility, but they must still match Kaggle's Python,
+PyTorch, CUDA, and existing packages. Successful installation does not guarantee
+successful execution. Changing workload dependencies **does not require a Docker rebuild**.
+
+## Step 5: Preview before submitting
+
+```bash
+./bin/krun run /path/to/my-project/report.py \
+  --project /path/to/my-project --internet --dry-run
+```
+
+Dry-run lists the root, entrypoint, dependencies, accelerator, size, and files
+to upload. It needs no Kaggle login and creates no job. The launcher still needs
+Docker and may build its image on first use.
+
+**Dry-run does not execute your code, install remote dependencies, test CUDA,
+or guarantee training will succeed.** Review the list, then remove `--dry-run`
+to submit. `doctor` checks local setup and authentication, not quota or GPU availability.
+
+## Step 6: Read logs and find results
+
+From the KRun repository, select the project you ran:
+
+```bash
+./bin/krun jobs --project /path/to/my-project
+./bin/krun status --project /path/to/my-project
+./bin/krun logs --project /path/to/my-project
+```
+
+Commands default to the newest local job **in that project**.
+To select another job, put its ID after the command name.
+The local log is at `.krun/jobs/<job-id>/logs.txt`.
+
+```text
+my-project/.krun/jobs/<job-id>/
+├── metadata.json                 # Job and download status
+├── logs.txt                      # Logs fetched from Kaggle
+├── workspace/runner.py           # Runner submitted to Kaggle
+└── output/
+    ├── krun_project/             # Uploaded source, not training results
+    └── krun_outputs/
+        ├── outputs/              # Files your code writes into outputs/
+        └── notebooks/            # Executed notebooks, when applicable
+```
+
+Kaggle may return extra logs/artifacts; not every folder appears in every job.
+**`download_status: complete` means files were downloaded, not that the job
+succeeded.** A job may still have status `error`. Check remote status and the
+final traceback in the log.
+
+KRun collects the project's `outputs/` directory by default. For another location:
+
+```bash
+./bin/krun run /path/to/my-project/report.py \
+  --project /path/to/my-project --internet --output reports
+```
+
+`--output` selects what to collect; it does not change where your script saves
+files. Repeat it to collect multiple paths. It replaces the entire default/YAML
+output list. Paths must be project-relative, not `/kaggle/working/results`.
+To use KRun's collection, save into a relative folder such as `outputs/`.
+
+### Resume waiting or download again
+
+Ctrl-C stops local monitoring; the Kaggle job may continue. `--detach`
+submits without waiting. `wait` resumes monitoring **without creating another job**,
+and `output` downloads artifacts again:
+
+```bash
+./bin/krun wait --project /path/to/my-project --timeout 14400
+./bin/krun output --project /path/to/my-project
+```
+
+`--timeout` limits local monitoring (one hour by default), not Kaggle runtime
+or quota. Network requests may take additional time. `--cell-timeout` limits each
+notebook cell. Temporarily unavailable logs do not stop monitoring.
+Read/download requests retry transient failures; submission is not retried
+automatically to avoid duplicate jobs.
+
+## Step 7: Update KRun and Docker
+
+From the KRun repository:
+
+```bash
+git pull
+./bin/krun build
+./bin/krun doctor
+```
+
+You normally **do not need to delete the old image**. The launcher rebuilds when
+CLI source or dependencies change; `build` explicitly requests a build.
+If you want to remove and recreate the local image, first check for containers
+using it:
+
+```bash
+docker ps -a --filter ancestor=krun:local
+docker image rm krun:local
+./bin/krun build
+```
+
+Only the `krun:local` image is targeted, not your project or results.
+Docker may refuse removal if a container uses the image.
+Do not force removal or use system prune for this workflow.
+
+## Troubleshooting
+
+- **Docker is unavailable / permission denied:** check `docker info`, Docker
+  access, and project ownership. Do not make credentials public.
+- **Bind mount error:** use a real folder shared with Docker Desktop.
+  The launcher does not support mount paths containing commas.
+- **Expired credentials:** run `./bin/krun login --force`, then `./bin/krun auth status`.
+- **Missing imports:** declare dependencies and enable internet. For local
+  modules, check `--project` and the dry-run file list.
+- **CUDA/bitsandbytes/Triton errors:** choose versions compatible with Kaggle's
+  environment. Rebuilding local Docker does not change remote CUDA.
+  Do not pin an old version just because a tutorial uses it.
+- **W&B says `No API key configured`:** if you do not use W&B, set
+  `report_to="none"` in your script's `TrainingArguments`.
+  This is workload logging configuration, not Kaggle authentication.
+- **Warnings but unclear job status:** check `status` and the final traceback.
+  Warnings and download/install messages alone do not prove failure.
+- **Unknown CLI option:** KRun flags go before `--`; script arguments go after it.
+- **GPU queued / unavailable:** inspect the printed job URL and your account quota.
+- **Submission timeout:** check the URL before submitting again; a local timeout
+  does not prove Kaggle did not receive the job.
+- **Job finished but download failed:** retry `output`, not the workload.
+  Failed jobs also attempt to download diagnostics when Kaggle provides them.
+
+## Advanced options
 
 ### Optional short command
 
@@ -73,243 +329,94 @@ directory. Mount only the project you intend to upload.
 ./scripts/install.sh
 ```
 
-This creates `~/.local/bin/krun` as a symlink to the launcher. Ensure that
-directory is on PATH. The installer does not overwrite another `krun` command
-or edit your shell configuration. Keep the cloned repository in place.
+This creates a symlink at `~/.local/bin/krun`; that directory must be on PATH.
+It does not overwrite an existing command or edit your shell profile.
+Keep the cloned repository in place. You can then run `krun run report.py`
+from your own project. In PowerShell, use the full launcher path:
+`& 'C:\tools\KRun-PyProjectOnKaggle\krun.ps1' run report.py`.
 
-Then, from your project root:
+### Inputs and upload limits
 
-```bash
-krun run main.py
-krun run scripts/report.py -- --input data/orders.csv
-```
-
-In PowerShell, call the launcher by its full path when working in another
-project, e.g. `& 'C:\tools\KRun-PyProjectOnKaggle\krun.ps1' run main.py`.
-
-## Scripts, modules and notebooks
+The limit is 20 MB before compression; errors list the largest files.
+Small project inputs are uploaded with your code. `--input` includes files
+excluded by user ignore rules, but does not bypass size limits or secret exclusions:
 
 ```bash
-./bin/krun demo module
-./bin/krun demo notebook
-./bin/krun run -m my_package.report --project /path/to/project -- --count 10
-./bin/krun run /path/to/project/analysis.ipynb --cell-timeout 900
+./bin/krun run /path/to/my-project/report.py \
+  --project /path/to/my-project --input /path/to/my-project/data/sample.csv
 ```
 
-Modules run with package context, supporting relative imports. The selected
-module must be a `.py` file or a package with `__main__.py` inside the project.
-Modules can be rooted at the project directory or in its `src/` directory.
+For larger data, attach an **existing** Kaggle Dataset using
+`--dataset owner/dataset-slug` and read it from `/kaggle/input/`.
+KRun does not create/upload datasets for you. Private dataset access still
+depends on your account.
 
-Python notebooks execute through Jupyter/nbclient on Kaggle. Their original
-files remain untouched. Old cell outputs are removed from the uploaded copy.
-The executed notebook is saved at
-`output/krun_outputs/notebooks/<name>.executed.ipynb`, including cell results up
-to a failure. Notebook execution requires `nbclient`, `nbformat` and a Python
-kernel in the remote environment; Kaggle's managed image normally includes
-them. Declare them in your requirements if using a different environment.
+### Optional YAML configuration
 
-The default working directory is the project root. Use `--cwd notebooks` for a
-notebook expecting relative paths from that subdirectory. `--cell-timeout`
-controls each notebook cell, while `--timeout` controls local job monitoring.
-The notebook's own code determines its device usage. Interactive prompts,
-desktop GUI code and long-lived servers are not supported batch workloads.
-Arguments after `--` are supported for scripts/modules; notebook CLI arguments
-are rejected instead of silently ignored.
+Without `--project`, KRun searches for `krun.yaml` or `.krun/jobs`,
+then requirements, pyproject, or Git markers, and finally uses the script's folder.
+Use `--project` for multi-directory projects.
 
-## Dependencies and inputs
-
-Without YAML, KRun detects root `requirements.txt`, otherwise root
-`pyproject.toml`, a single nested manifest, or one containing the entrypoint.
-Ambiguous manifests require an explicit selection:
+`init` writes YAML into the working directory and does not accept `--project`.
+Switch into your project and call the launcher by its full path:
 
 ```bash
-./bin/krun run /path/to/project/main.py --requirements /path/to/project/requirements.txt
-./bin/krun run /path/to/project/main.py --dependency-project /path/to/project/backend
-./bin/krun run /path/to/project/main.py --input data/sample.csv
+cd /path/to/my-project
+/path/to/KRun-PyProjectOnKaggle/bin/krun init --entrypoint report.py
+cd /path/to/KRun-PyProjectOnKaggle
 ```
 
-These files/directories must remain inside the selected project. Dependencies
-install on Kaggle, not in your local venv. Set `--internet` when installation
-or model/data downloads need internet. `--no-internet` requests offline use.
-KRun does not infer a reliable dependency list from imports or copy your venv.
-
-Use repeatable `--package` to explicitly request extra pip dependencies without
-adding a requirements file. For example, preview your HandsOnLLM notebook:
-
-```bash
-./bin/krun run /data/HandsOnLLM/Chapter4_TextClassification.ipynb \
-  --package transformers --package datasets --package scikit-learn --package tqdm \
-  --gpu T4 --internet --dry-run
-```
-
-Remove `--dry-run` to submit after reviewing the package. The notebook may also
-require model access or account quota; explicit package names alone do not
-guarantee arbitrary notebook code will complete. Pin versions for reproducible
-runs, e.g. `--package 'some-library==1.2.3'`.
-
-Small local inputs are included in the project archive. The limit is 20 MB
-before compression; the error lists the largest files. For larger data, attach
-an **existing** Kaggle Dataset:
-
-```bash
-./bin/krun run main.py --dataset owner/dataset-slug
-```
-
-Read attached data from `/kaggle/input/` in your script. KRun does not currently
-create/upload datasets for you. Access to private datasets still depends on
-your Kaggle account.
-
-## Preview before submitting
-
-```bash
-./bin/krun run /path/to/project/main.py --dry-run
-./bin/krun doctor
-./bin/krun auth status
-```
-
-Dry-run lists the root, entrypoint, dependencies, accelerator, file count,
-package size and filenames. It requires no Kaggle login and creates no job.
-Doctor checks local write access and makes an authenticated Kaggle request;
-it cannot guarantee accelerator availability or remaining quota.
-
-## Logs and results
-
-Run lifecycle commands from the project root, or pass `--project`:
-
-```bash
-krun run main.py --detach
-krun jobs
-krun status
-krun logs
-krun wait
-krun output
-```
-
-Commands default to the newest local job. Supply a job ID to select another:
-
-```bash
-krun wait 20260927-120000-a1b2c3 --timeout 7200
-krun output 20260927-120000-a1b2c3 --path downloaded
-```
-
-The launcher allows download paths inside the mounted project. Select a common
-root with `--project` if your desired destination is elsewhere. Native installs
-can download directly to other host paths.
-
-Monitoring polls status and readable logs. Unavailable logs do not stop status
-monitoring. Ctrl-C stops local monitoring; the remote job may continue. Resume
-with `wait` without resubmitting. Monitoring defaults to one hour; bounded
-network requests may take additional time. Read/download requests retry only
-transient failures; submission is never retried automatically.
-
-Remote job status and download status are stored separately. If the job has
-completed but download failed, retry `output`. Failed jobs also attempt to
-download diagnostic artifacts when Kaggle makes them available.
-
-```text
-.krun/jobs/<job-id>/
-├── metadata.json
-├── logs.txt
-├── workspace/runner.py
-├── workspace/kernel-metadata.json
-└── output/krun_outputs/
-```
-
-Files under `outputs/` are collected by default. Add repeatable `--output`
-options for other locations. Notebook results are saved automatically.
-
-## Optional configuration
-
-`krun init --entrypoint main.py` saves reusable defaults. Existing YAML remains
-supported. CLI options override YAML, then discovery/defaults apply:
+CLI options override YAML, then discovery/defaults apply. Example `krun.yaml`:
 
 ```yaml
 project:
-  name: sales-report
+  name: my-project
 runtime:
   accelerator: cpu
   internet: true
 entrypoint:
-  file: main.py
+  file: report.py
 dependencies:
   requirements: requirements.txt
   project: null
 outputs:
   - outputs/
-  - metrics.json
 ```
 
-Set `requirements` to `null` when no requirements file is used. `requirements`
-and `project` are mutually exclusive. Paths must stay inside the project;
-output paths cannot be absolute, contain `..`, or select the project root or
-`.krun` state. `--output` replaces the configured output list.
+Set `requirements: null` when no requirements file is used.
+`requirements` and `project` are mutually exclusive.
+Output paths cannot be absolute, contain `..`, or select the project root
+or `.krun`. Symlinks are not uploaded or followed during artifact collection.
 
-## Credentials and secrets
+### Credentials, secrets, and ignore files
 
-The launcher mounts `~/.kaggle` read-write for OAuth refresh. It forwards
-existing `KAGGLE_API_TOKEN`, `KAGGLE_USERNAME` and `KAGGLE_KEY` environment
-variables. Token users should set `KAGGLE_USERNAME` or pass `--owner` when the
-username cannot be resolved. Never paste a token into a command argument,
-source file, YAML or Git commit.
+The launcher mounts `~/.kaggle` read-write for OAuth refresh and forwards
+existing `KAGGLE_API_TOKEN`, `KAGGLE_USERNAME`, and `KAGGLE_KEY` variables.
+Token users may need `KAGGLE_USERNAME` or `--owner` if the username cannot be resolved.
+Never put tokens in command arguments, source, YAML, or Git.
 
-`--secret NAME` asks the remote runner to read an **already enabled** Kaggle
-Secret into an environment variable. It sends only the name, never the value.
-Enabling a secret for the generated kernel is a separate Kaggle permission:
-KRun cannot grant it through the supported submission metadata. Thus this
-option alone does not make a fresh kernel able to call Groq or another private
-API; configure access through Kaggle before expecting the secret to resolve.
+`--secret NAME` reads an **already enabled** Kaggle Secret into a remote
+environment variable. Only its name is sent, not its value.
+KRun cannot grant secret access through submission metadata; this option alone
+does not give a new kernel access to a private API.
 
-Known credential/key filenames, `.kaggle`, virtual environments, Git metadata
-and `.krun` state are always excluded, including with `--input`. Hardcoded
-credentials inside ordinary source files cannot be reliably detected: inspect
-the dry-run list and source before submitting sensitive projects.
+Known credential filenames, `.kaggle`, virtual environments, Git metadata,
+and `.krun` are always excluded, even with `--input`.
+Hardcoded secrets are not reliably detected: review your source and dry-run list.
+Root `.gitignore`/`.krunignore` support a subset of globs, directory patterns,
+and ordered `!` negations, not full Git semantics.
+Nested ignore files and escaped patterns are not supported.
 
-Root `.gitignore` and `.krunignore` accept a small glob subset: comments,
-filenames, glob patterns, directory paths and ordered `!` negations. This is
-not Git's complete ignore specification; nested ignore files and escaped
-patterns are not implemented. `--input` overrides these user exclusions but
-not mandatory credential exclusions. Symlinks are not uploaded or followed
-while collecting artifacts.
+### Release images and development
 
-## Updating and advanced Docker use
+Only after a release image has actually been published, set `KRUN_IMAGE` to
+`ghcr.io/nhminh107/krun-pyprojectonkaggle:<release-tag>` to pull instead of building.
+Do not assume this image already exists. Custom images are not rebuilt;
+use `docker pull` to update them.
+CLI dependencies are pinned in `requirements-docker.txt`; resolved versions
+are recorded at `/opt/venv/resolved-requirements.txt`.
 
-`git pull` then run the launcher: it rebuilds a local image when source or
-runtime requirements change. `./bin/krun build` explicitly rebuilds it.
-The Docker dependency list pins runtime versions and the image records resolved
-versions in `/opt/venv/resolved-requirements.txt`.
-
-After a release image has actually been published, set `KRUN_IMAGE` to its
-versioned GHCR tag to pull it instead of building locally. The release workflow
-defines `ghcr.io/nhminh107/krun-pyprojectonkaggle:<release-tag>`; its presence is
-not assumed until the workflow completes. Custom images are not rebuilt by
-the launcher. Force an update with `docker pull` when appropriate.
-
-For manual use, matching host ownership:
-
-```bash
-docker build --build-arg USER_ID="$(id -u)" --build-arg GROUP_ID="$(id -g)" -t krun:local .
-cd /path/to/project
-docker run --rm -it -v "$PWD:/workspace" -v "$HOME/.kaggle:/home/krun/.kaggle" krun:local run main.py
-```
-
-## Troubleshooting
-
-- Docker daemon error: start Docker and check `docker info` and permissions.
-- Bind mount error: use a real project directory shared with Docker Desktop.
-  Docker `--mount` source paths containing commas are not supported by the launcher.
-- Permission denied: verify host folder ownership. The launcher sets runtime
-  UID/GID and a writable temporary home; do not make credential files public.
-- Missing/expired credentials: run `login --force`, then `auth status`.
-- Missing imports: declare dependencies explicitly; ensure internet is enabled.
-- Wrong project root: pass `--project`; inspect `--dry-run` first.
-- Unknown CLI option: KRun flags precede `--`; program arguments follow it.
-- Queued/unavailable GPU: inspect the Kaggle job URL and account quota.
-- Submission error: inspect the printed kernel URL before submitting again;
-  a network timeout does not prove the remote submission was rejected.
-
-## Development and validation
-
-Native development requires Python 3.11+:
+Native development requires Python 3.11+. This is not required for Docker users:
 
 ```bash
 python -m venv .venv
@@ -318,10 +425,6 @@ python -m pip install -e '.[dev]'
 python -m pytest -q
 ```
 
-Tests cover discovery, packaging exclusions, local imports, modules, notebook
-execution/error artifacts, job state and monitor/download recovery. Normal CI
-does not contact Kaggle. Authenticated CPU checks use the three demo commands.
-GPU and real notebooks with model downloads require separate account-aware
-testing. See [docs/design.md](docs/design.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
-
-MIT license. See [LICENSE](LICENSE).
+Normal CI does not call Kaggle. Local tests and dry-runs do not replace real GPU
+or workload tests. See [design notes](docs/design.md),
+[contributing](CONTRIBUTING.md), and the [MIT License](LICENSE).
