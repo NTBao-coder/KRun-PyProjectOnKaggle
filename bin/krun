@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+# Docker-backed launcher. Requires Bash 3.2+, but no host Python.
+set -euo pipefail
+
+script_path=${BASH_SOURCE[0]}
+while [[ -L "$script_path" ]]; do
+  script_dir=$(cd -P "$(dirname "$script_path")" && pwd)
+  script_path=$(readlink "$script_path")
+  [[ "$script_path" = /* ]] || script_path="$script_dir/$script_path"
+done
+repo=$(cd -P "$(dirname "$script_path")/.." && pwd)
+image=${KRUN_IMAGE:-krun:local}
+
+fail() { printf 'KRun: %s\n' "$*" >&2; exit 1; }
+command -v docker >/dev/null 2>&1 || fail "Docker is missing. Install Docker Desktop or Docker Engine first."
+docker info >/dev/null 2>&1 || fail "Docker is not running or access is denied. Start Docker Desktop/Engine and retry docker info."
+
+# A source fingerprint prevents a stale image from running after git pull.
+fingerprint=$(
+  { find "$repo/krun" -type f -name '*.py' | LC_ALL=C sort | while IFS= read -r file; do cksum "$file"; done
+    cksum "$repo/Dockerfile" "$repo/pyproject.toml" "$repo/requirements-docker.txt"
+  } | cksum | awk '{print $1 "-" $2}'
+)
+build_image() {
+  docker build --build-arg "USER_ID=$(id -u)" --build-arg "GROUP_ID=$(id -g)" \
+    --label "io.krun.source-hash=$fingerprint" -t "$image" "$repo"
+}
+if [[ ${1:-} == build ]]; then build_image; exit; fi
+if ! docker image inspect "$image" >/dev/null 2>&1; then
+  if [[ -n ${KRUN_IMAGE:-} ]]; then docker pull "$image"; else build_image; fi
+elif [[ -z ${KRUN_IMAGE:-} ]]; then
+  installed=$(docker image inspect --format '{{ index .Config.Labels "io.krun.source-hash" }}' "$image")
+  [[ "$installed" == "$fingerprint" ]] || build_image
+fi
+
+args=("$@")
+if [[ ${args[0]:-} == demo ]]; then
+  case ${args[1]:-sales-report} in
+    sales-report) demo_root="$repo/examples/sales_report"; target=main.py ;;
+    module) demo_root="$repo/examples/module_job"; target="" ;;
+    notebook) demo_root="$repo/examples/notebook_job"; target=report.ipynb ;;
+    *) fail "Choose demo sales-report, module, or notebook." ;;
+  esac
+  extra=()
+  if (( ${#args[@]} > 2 )); then extra=("${args[@]:2}"); fi
+  cd "$demo_root"
+  if [[ -n "$target" ]]; then args=(run "$target" --project "$demo_root" "${extra[@]}");
+  else args=(run -m report_job --project "$demo_root" "${extra[@]}"); fi
+fi
+
+original=$(pwd -P)
+root=$original
+target=""
+explicit=""
+skip=0
+if [[ ${args[0]:-} == run ]]; then
+  for ((i=1; i<${#args[@]}; i++)); do
+    value=${args[$i]}
+    [[ "$value" == -- ]] && break
+    if ((skip)); then skip=0; continue; fi
+    case "$value" in
+      --project) ((i+1<${#args[@]})) || fail "--project needs a directory."; explicit=${args[$((i+1))]}; skip=1 ;;
+      --project=*) explicit=${value#*=} ;;
+      --module|-m|--gpu|--accelerator|--owner|--requirements|--dependency-project|--package|--output|--input|--dataset|--secret|--cwd|--timeout|--cell-timeout) skip=1 ;;
+      --*=*|--*|-*) ;;
+      *) [[ -n "$target" ]] || target=$value ;;
+    esac
+  done
+fi
+# Lifecycle commands also support an explicit project directory.
+for ((i=1; i<${#args[@]}; i++)); do
+  [[ ${args[$i]} == -- ]] && break
+  if [[ ${args[$i]} == --project ]]; then explicit=${args[$((i+1))]:-}; fi
+  if [[ ${args[$i]} == --project=* ]]; then explicit=${args[$i]#*=}; fi
+done
+if [[ -n "$explicit" ]]; then
+  root=$(cd "$explicit" && pwd -P) || fail "Project directory does not exist."
+else
+  candidate=$original
+  if [[ -n "$target" && -f "$target" ]]; then candidate=$(cd "$(dirname "$target")" && pwd -P); fi
+  search=$candidate
+  found=""
+  while :; do
+    if [[ -f "$search/krun.yaml" || -d "$search/.krun/jobs" ]]; then found=$search; break; fi
+    [[ "$search" == / ]] && break
+    search=$(dirname "$search")
+  done
+  if [[ -z "$found" ]]; then
+    search=$candidate
+    while :; do
+      if [[ -f "$search/pyproject.toml" || -f "$search/requirements.txt" || -f "$search/.git" || -f "$search/.git/HEAD" ]]; then found=$search; break; fi
+      [[ "$search" == / ]] && break
+      search=$(dirname "$search")
+    done
+  fi
+  root=${found:-$candidate}
+fi
+
+# Normalize host paths in KRun options only; forwarded program arguments stay literal.
+path_value() {
+  local value=$1 resolved directory
+  if [[ "$value" = /* ]]; then resolved=$value
+  elif [[ -e "$original/$value" ]]; then resolved="$original/$value"
+  else resolved="$root/$value"; fi
+  if [[ -d "$resolved" ]]; then resolved=$(cd "$resolved" && pwd -P)
+  else
+    directory=$(cd "$(dirname "$resolved")" && pwd -P) || fail "Path parent does not exist: $value"
+    resolved="$directory/$(basename "$resolved")"
+  fi
+  [[ "$resolved" == "$root" || "$resolved" == "$root/"* ]] || fail "Path lies outside project: $value. Select a common root with --project."
+  [[ "$resolved" == "$root" ]] && printf '/workspace' || printf '/workspace/%s' "${resolved#"$root/"}"
+}
+after_separator=0
+path_next=0
+for ((i=1; i<${#args[@]}; i++)); do
+  value=${args[$i]}
+  if [[ "$value" == -- ]]; then after_separator=1; continue; fi
+  ((after_separator)) && continue
+  if ((path_next)); then args[$i]=$(path_value "$value"); path_next=0; continue; fi
+  case "$value" in
+    --project|--requirements|--dependency-project|--input|--path) path_next=1 ;;
+    --project=*|--requirements=*|--dependency-project=*|--input=*|--path=*)
+      args[$i]="${value%%=*}=$(path_value "${value#*=}")" ;;
+    *) if [[ -n "$target" && "$value" == "$target" ]]; then args[$i]=$(path_value "$value"); target=""; fi ;;
+  esac
+done
+
+mkdir -p "$HOME/.kaggle"
+tty_args=()
+if [[ -t 0 && -t 1 ]]; then tty_args=(-it)
+elif [[ ${args[0]:-} == login ]]; then tty_args=(-i); fi
+env_args=()
+for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY; do
+  if printenv "$name" >/dev/null 2>&1; then env_args+=(-e "$name"); fi
+done
+exec docker run --rm "${tty_args[@]}" \
+  --user "$(id -u):$(id -g)" \
+  --tmpfs "/home/krun:uid=$(id -u),gid=$(id -g),mode=700" \
+  --mount "type=bind,source=$root,target=/workspace" \
+  --mount "type=bind,source=$HOME/.kaggle,target=/home/krun/.kaggle" \
+  -e "KRUN_HOST_ROOT=$root" "${env_args[@]}" \
+  "$image" "${args[@]}"

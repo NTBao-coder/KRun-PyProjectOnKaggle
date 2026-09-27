@@ -55,16 +55,45 @@ class KaggleClient:
         self,
         kernel: str,
         poll_interval: float = 5.0,
+        timeout: float = 3600,
     ) -> tuple[str, str]:
         terminal_statuses = {"complete", "error", "cancelled"}
+        deadline = time.monotonic() + timeout
         while True:
             status, detail = self.status(kernel)
             if status in terminal_statuses:
                 return status, detail
+            if time.monotonic() >= deadline:
+                raise CommandError("Monitoring timed out. The remote job may still be running; use 'krun wait'.")
             time.sleep(poll_interval)
 
     def logs(self, kernel: str) -> str:
-        return self._run(["kernels", "logs", kernel])
+        content = self._run(["kernels", "logs", kernel])
+        try:
+            records = json.loads(content)
+            if isinstance(records, list):
+                return "".join(str(record.get("data", "")) for record in records if isinstance(record, dict))
+        except json.JSONDecodeError:
+            pass
+        return content
+
+    def login(self, force: bool = False) -> None:
+        command = [self.executable, "auth", "login", "--no-launch-browser"]
+        if force:
+            command.append("--force")
+        completed = subprocess.run(command, check=False)
+        if completed.returncode:
+            if force or not has_credentials():
+                raise CommandError("Kaggle login failed. Retry 'krun login'.")
+            self.verify_auth()
+
+    def verify_auth(self) -> str:
+        self.validate_environment()
+        self._run(["kernels", "list", "--mine", "--page-size", "1"])
+        try:
+            return kaggle_username()
+        except KrunError:
+            return "token account (set KAGGLE_USERNAME or pass --owner when running)"
 
     def follow_logs(self, kernel: str) -> None:
         command = [self.executable, "kernels", "logs", "--follow", kernel]
@@ -92,24 +121,25 @@ class KaggleClient:
 
     def _run(self, args: list[str]) -> str:
         command = [self.executable, *args]
-        try:
-            completed = subprocess.run(
-                command,
-                text=True,
-                capture_output=True,
-                check=False,
-            )
-        except OSError as exc:
-            raise CommandError(f"Could not start Kaggle CLI: {exc}") from exc
-
-        if completed.returncode != 0:
+        attempts = 1 if args[:2] == ["kernels", "push"] else 3
+        for attempt in range(attempts):
+            try:
+                completed = subprocess.run(command, text=True, capture_output=True, check=False, timeout=120)
+            except subprocess.TimeoutExpired as exc:
+                if attempt + 1 < attempts:
+                    continue
+                raise CommandError("Kaggle request timed out. Submission is not retried automatically; inspect the job on Kaggle before resubmitting.") from exc
+            except OSError as exc:
+                raise CommandError(f"Could not start Kaggle CLI: {exc}") from exc
+            if completed.returncode == 0:
+                return completed.stdout.strip()
             detail = completed.stderr.strip() or completed.stdout.strip() or "No details returned."
-            raise CommandError(
-                "Kaggle command failed.\n\n"
-                f"Kaggle response:\n{detail}\n\n"
-                "Check your credentials, network connection, accelerator access, and quota."
-            )
-        return completed.stdout.strip()
+            transient = any(word in detail.lower() for word in ("timeout", "connection", "429", "502", "503", "504", "temporary"))
+            if transient and attempt + 1 < attempts:
+                time.sleep(2 ** attempt)
+                continue
+            raise CommandError(f"Kaggle command failed:\n{detail}\nCheck login, network, accelerator access and quota.")
+        raise CommandError("Kaggle request failed.")
 
 
 def write_kernel_metadata(
@@ -117,6 +147,7 @@ def write_kernel_metadata(
     kernel: str,
     title: str,
     internet: bool,
+    datasets: list[str] | None = None,
 ) -> Path:
     metadata = {
         "id": kernel,
@@ -128,7 +159,7 @@ def write_kernel_metadata(
         "enable_gpu": False,
         "enable_tpu": False,
         "enable_internet": internet,
-        "dataset_sources": [],
+        "dataset_sources": datasets or [],
         "competition_sources": [],
         "kernel_sources": [],
         "model_sources": [],

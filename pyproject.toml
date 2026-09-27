@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "krun-cli"
-version = "0.1.0"
+version = "0.2.0"
 description = "Make Kaggle GPU feel like a local Python runtime"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -26,7 +26,7 @@ classifiers = [
 krun = "krun.cli:run_cli"
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "nbclient>=0.10,<1", "nbformat>=5.10,<6", "ipykernel>=6,<8"]
 
 [tool.setuptools.packages.find]
 include = ["krun*"]

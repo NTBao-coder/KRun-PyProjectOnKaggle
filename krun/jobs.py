@@ -1,4 +1,5 @@
 import json
+import re
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,11 +17,15 @@ class Job:
     accelerator: str
     submitted_at: str
     status: str
+    download_status: str = "pending"
+    error: str | None = None
 
 
 class JobStore:
     def __init__(self, project_root: Path) -> None:
         self.root = project_root / ".krun" / "jobs"
+        if not self.root.resolve().is_relative_to(project_root.resolve()):
+            raise KrunError("Job state cannot be symlinked outside the project.")
 
     def create(
         self,
@@ -47,7 +52,7 @@ class JobStore:
         directory = self.directory(job.job_id)
         directory.mkdir(parents=True, exist_ok=True)
         destination = directory / "metadata.json"
-        temporary = destination.with_suffix(".tmp")
+        temporary = destination.with_name(f"metadata.{uuid4().hex}.tmp")
         temporary.write_text(json.dumps(asdict(job), indent=2) + "\n", encoding="utf-8")
         temporary.replace(destination)
 
@@ -73,7 +78,20 @@ class JobStore:
         return self.load(job_ids[-1])
 
     def directory(self, job_id: str) -> Path:
-        return self.root / job_id
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", job_id):
+            raise KrunError("Invalid job ID. Use a job ID shown by 'krun jobs'.")
+        path = self.root / job_id
+        if not path.resolve().is_relative_to(self.root.resolve()):
+            raise KrunError("Job directory escapes the state directory.")
+        return path
+
+    def list_jobs(self) -> list[Job]:
+        if not self.root.is_dir():
+            return []
+        return [
+            self.load(path.name) for path in sorted(self.root.iterdir())
+            if path.is_dir() and (path / "metadata.json").is_file()
+        ]
 
 
 def new_kernel_slug(project_name: str, job_id: str) -> str:

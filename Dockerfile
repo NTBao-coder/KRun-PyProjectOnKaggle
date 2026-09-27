@@ -1,16 +1,21 @@
 FROM python:3.12-slim AS builder
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_NO_CACHE_DIR=1 \
+    PIP_DEFAULT_TIMEOUT=60 \
+    PIP_RETRIES=5 \
     VIRTUAL_ENV=/opt/venv
 
 RUN python -m venv "$VIRTUAL_ENV"
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
 WORKDIR /build
+COPY requirements-docker.txt ./
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m pip install -r requirements-docker.txt setuptools==80.9.0 wheel==0.45.1
 COPY pyproject.toml README.md LICENSE ./
 COPY krun ./krun
-RUN python -m pip install .
+RUN python -m pip install --no-deps --no-build-isolation . \
+    && python -m pip freeze > /opt/venv/resolved-requirements.txt
 
 
 FROM python:3.12-slim AS runtime

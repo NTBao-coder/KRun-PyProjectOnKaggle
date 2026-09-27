@@ -19,4 +19,6 @@ dist
 tests
 docs
 examples
-
+bin
+scripts
+krun.ps1
