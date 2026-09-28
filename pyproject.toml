@@ -28,8 +28,26 @@ krun = "krun.cli:run_cli"
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "nbclient>=0.10,<1", "nbformat>=5.10,<6", "ipykernel>=6,<8"]
 
-[tool.setuptools.packages.find]
-include = ["krun*"]
+[project.urls]
+Homepage = "https://github.com/nhminh107/KRun-PyProjectOnKaggle"
+Issues = "https://github.com/nhminh107/KRun-PyProjectOnKaggle/issues"
+
+[tool.setuptools]
+packages = ["krun"]
+include-package-data = false
+
+[tool.setuptools.package-data]
+krun = [
+    "demo_templates/sales_report/main.py",
+    "demo_templates/sales_report/reporting/*.py",
+    "demo_templates/sales_report/krun.yaml",
+    "demo_templates/sales_report/data/orders.csv",
+    "demo_templates/module_job/report_job/*.py",
+    "demo_templates/notebook_job/report.ipynb",
+    "demo_templates/*/README.md",
+    "demo_templates/*/.gitignore",
+    "demo_templates/*/.krunignore",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
