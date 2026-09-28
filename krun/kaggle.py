@@ -52,6 +52,34 @@ class KaggleClient:
             args.extend(["--accelerator", accelerator])
         return self._run(args)
 
+    def upload_package(self, archive: Path, dataset: str, timeout: float = 600) -> None:
+        """Create a private, immutable per-job dataset and await processing."""
+        metadata = {
+            "id": dataset,
+            "title": dataset.split("/")[1],
+            "licenses": [{"name": "other"}],
+            "description": "Private KRun job package. Original file licenses remain applicable.",
+        }
+        (archive.parent / "dataset-metadata.json").write_text(
+            json.dumps(metadata, indent=2) + "\n", encoding="utf-8",
+        )
+        # No --public: the official CLI creates private datasets by default.
+        self._run(["datasets", "create", "--path", str(archive.parent), "--keep-tabular"])
+        deadline = time.monotonic() + timeout
+        while True:
+            status = self._run(["datasets", "status", dataset]).strip().lower()
+            if status == "ready":
+                return
+            if status not in {
+                "queued", "processing", "not_yet_persisted", "blobs_received",
+                "blobs_decompressed", "blobs_copied_to_sds",
+                "individual_blobs_compressed", "reprocessing",
+            }:
+                raise CommandError(f"Package dataset {dataset} is not ready: {status}")
+            if time.monotonic() >= deadline:
+                raise CommandError(f"Timed out waiting for package dataset {dataset}. Inspect it before retrying.")
+            time.sleep(5)
+
     def status(self, kernel: str) -> tuple[str, str]:
         output = self._run(["kernels", "status", kernel])
         match = re.search(r'has status "([^"]+)"', output)
@@ -130,7 +158,7 @@ class KaggleClient:
 
     def _run(self, args: list[str]) -> str:
         command = [self.executable, *args]
-        attempts = 1 if args[:2] == ["kernels", "push"] else 3
+        attempts = 1 if args[:2] in (["kernels", "push"], ["datasets", "create"]) else 3
         for attempt in range(attempts):
             try:
                 completed = subprocess.run(

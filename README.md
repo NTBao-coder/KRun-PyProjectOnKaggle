@@ -342,8 +342,20 @@ krun run /path/to/my-project/report.py \
 
 For larger data, attach an **existing** Kaggle Dataset using
 `--dataset owner/dataset-slug` and read it from `/kaggle/input/`.
-KRun does not create/upload datasets for you. Private dataset access still
-depends on your account.
+Kaggle's API (including its CLI) limits notebook/script source to 1 MB. KRun
+automatically sends packages whose generated runner reaches 900 KB through a
+**private per-job dataset**, attaches it, and verifies its SHA-256 before
+extracting it. Small packages remain embedded in the runner. Commands, imports,
+relative paths and the 20 MB uncompressed project limit remain unchanged.
+The `.bin` upload contains a compressed archive, preventing Kaggle from unpacking
+it before the runner can verify it. Existing `--dataset` attachments are preserved.
+
+Dataset creation requires permission and available private dataset storage on your
+Kaggle account. KRun prints the dataset URL and records `package_dataset` in job
+metadata before uploading. These datasets are retained, including after failures;
+remove them through Kaggle when no longer needed (old jobs then cannot rerun).
+KRun never publishes these packages or automatically deletes existing datasets.
+`--dry-run` does not upload anything. Private dataset access depends on your account.
 
 ### Optional YAML configuration
 

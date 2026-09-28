@@ -17,6 +17,38 @@ from krun.packaging import package_files, prepare_workspace
 from krun.project import discover_project
 
 
+@pytest.mark.parametrize("upload_fails", [False, True])
+def test_large_project_dataset_attachment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, upload_fails: bool) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "main.py").write_text("print('large project')\n")
+    (tmp_path / "data.bin").write_bytes(os.urandom(800_000))
+    monkeypatch.setattr(KaggleClient, "validate_environment", lambda client: None)
+    calls = []
+    def upload(client, archive, dataset):
+        assert archive.is_file()
+        job = JobStore(tmp_path).latest()
+        assert job.package_dataset == dataset
+        calls.append("upload")
+        if upload_fails:
+            raise KrunError("upload failed")
+    def submit(client, workspace, accelerator):
+        metadata = json.loads((workspace / "kernel-metadata.json").read_text())
+        assert metadata["dataset_sources"] == ["owner/existing", JobStore(tmp_path).latest().package_dataset]
+        assert metadata["enable_internet"] is False
+        calls.append("submit")
+        return "submitted"
+    monkeypatch.setattr(KaggleClient, "upload_package", upload)
+    monkeypatch.setattr(KaggleClient, "submit", submit)
+    result = CliRunner().invoke(app, ["run", "main.py", "--owner", "owner", "--dataset", "owner/existing", "--no-internet", "--detach"])
+    if upload_fails:
+        assert result.exit_code != 0
+        assert calls == ["upload"]
+        assert JobStore(tmp_path).latest().package_dataset is not None
+    else:
+        assert result.exit_code == 0, result.output
+        assert calls == ["upload", "submit"]
+
+
 def execute_runner(root: Path, work: Path, module: str | None = None) -> subprocess.CompletedProcess[str]:
     project = discover_project(root, None if module else Path("main.py"), project_root=root, module=module)
     package = prepare_workspace(project, work / "workspace", [])

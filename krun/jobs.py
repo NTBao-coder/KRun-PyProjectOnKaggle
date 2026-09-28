@@ -19,6 +19,7 @@ class Job:
     status: str
     download_status: str = "pending"
     error: str | None = None
+    package_dataset: str | None = None
 
 
 class JobStore:

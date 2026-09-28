@@ -4,6 +4,7 @@ import json
 import os
 import time
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Optional
 
 import typer
@@ -231,6 +232,13 @@ def run(
         if language != "python":
             raise KrunError("Only Python notebooks are supported.")
     if dry_run:
+        with TemporaryDirectory(prefix="krun-preview-") as temporary:
+            preview = prepare_workspace(
+                selected, Path(temporary) / "workspace", args, inputs, cell_timeout,
+                workdir.relative_to(selected.root).as_posix(), secret_names, packages,
+            )
+            transport = "private dataset" if preview.archive else "embedded script"
+            console.print(f"Package transport: {transport}; runner: {preview.runner.stat().st_size} bytes")
         console.print("Dry run: no submission, no credentials needed, no job created.")
         for path in files:
             console.print(path.relative_to(selected.root).as_posix(), markup=False)
@@ -246,19 +254,35 @@ def run(
     store.save(job)
     workspace = store.directory(job.job_id) / "workspace"
     try:
-        prepare_workspace(
+        package = prepare_workspace(
             selected, workspace, args, inputs, cell_timeout,
             workdir.relative_to(selected.root).as_posix(), secret_names, packages,
         )
-        write_kernel_metadata(workspace, job.kernel, slug.replace("-", " "), network_enabled, datasets)
+        attached_datasets = list(datasets or [])
+        if package.archive is not None:
+            job.package_dataset = f"{username}/krun-{job.job_id}"
+            job.status = "uploading_package"
+            store.save(job)
+            console.print(f"Large project: uploading private dataset https://www.kaggle.com/datasets/{job.package_dataset}")
+            client.upload_package(package.archive, job.package_dataset)
+            attached_datasets.append(job.package_dataset)
+        write_kernel_metadata(workspace, job.kernel, slug.replace("-", " "), network_enabled, attached_datasets)
         job.status = "submitting"
         store.save(job)
         response = client.submit(workspace, shape)
     except (KrunError, OSError, ValueError) as exc:
-        job.status = "submission_unknown" if job.status == "submitting" else "preparation_error"
+        job.status = {
+            "submitting": "submission_unknown",
+            "uploading_package": "package_upload_error",
+        }.get(job.status, "preparation_error")
         job.error = str(exc)
         store.save(job)
-        raise KrunError(f"{exc}\nInspect https://www.kaggle.com/code/{job.kernel} before submitting again.") from exc
+        inspect_url = (
+            f"https://www.kaggle.com/datasets/{job.package_dataset}"
+            if job.status == "package_upload_error"
+            else f"https://www.kaggle.com/code/{job.kernel}"
+        )
+        raise KrunError(f"{exc}\nInspect {inspect_url} before submitting again.") from exc
     job.status = "submitted"
     store.save(job)
     console.print(f"Submitted https://www.kaggle.com/code/{job.kernel}")

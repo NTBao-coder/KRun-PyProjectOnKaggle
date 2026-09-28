@@ -7,6 +7,31 @@ from krun.errors import KrunError
 from krun.kaggle import KaggleClient, normalize_accelerator, write_kernel_metadata
 
 
+def test_package_upload_is_private_and_waits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    archive = tmp_path / "package.bin"
+    archive.write_bytes(b"archive")
+    calls = []
+    responses = iter(["created", "processing", "ready"])
+    client = KaggleClient(executable="kaggle")
+    def run(args):
+        calls.append(args)
+        return next(responses)
+    monkeypatch.setattr(client, "_run", run)
+    monkeypatch.setattr("krun.kaggle.time.sleep", lambda seconds: None)
+    client.upload_package(archive, "owner/krun-test")
+    assert calls[0] == ["datasets", "create", "--path", str(tmp_path), "--keep-tabular"]
+    assert calls[1:] == [["datasets", "status", "owner/krun-test"]] * 2
+    assert json.loads((tmp_path / "dataset-metadata.json").read_text())["licenses"] == [{"name": "other"}]
+
+
+@pytest.mark.parametrize("status", ["error", "processing"])
+def test_package_upload_failure_or_timeout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: str) -> None:
+    client = KaggleClient(executable="kaggle")
+    monkeypatch.setattr(client, "_run", lambda args: status)
+    with pytest.raises(KrunError, match="not ready|Timed out"):
+        client.upload_package(tmp_path / "package.bin", "owner/krun-test", timeout=0)
+
+
 def test_kaggle_uses_tool_environment_before_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import os
 

@@ -1,10 +1,39 @@
 import os
 import subprocess
 import sys
+import shutil
 from pathlib import Path
 
 from krun.packaging import collect_project_files, prepare_workspace
 from krun.project import discover_project
+
+
+def test_large_package_runs_from_dataset_and_rejects_corruption(tmp_path: Path) -> None:
+    from krun.packaging import MAX_RUNNER_BYTES
+
+    root = tmp_path / "source"
+    root.mkdir()
+    create_sample_project(root)
+    (root / "data.bin").write_bytes(os.urandom(800_000))
+    (root / ".env").write_text("SECRET=excluded")
+    result = prepare_workspace(discover_project(root), tmp_path / "job/workspace", [])
+    assert result.archive is not None
+    assert result.runner.stat().st_size < MAX_RUNNER_BYTES
+    inputs = tmp_path / "input/datasets/owner/package"
+    inputs.mkdir(parents=True)
+    uploaded = inputs / result.archive.name
+    shutil.copyfile(result.archive, uploaded)
+    remote = tmp_path / "remote"
+    env = {**os.environ, "KRUN_INPUT_DIR": str(tmp_path / "input"), "KRUN_WORKING_DIR": str(remote)}
+    completed = subprocess.run([sys.executable, str(result.runner)], env=env, capture_output=True, text=True)
+    assert completed.returncode == 0, completed.stderr
+    assert (remote / "krun_outputs/outputs/result.txt").read_text() == "local import works"
+    assert (remote / "krun_project/data.bin").read_bytes() == (root / "data.bin").read_bytes()
+    assert not (remote / "krun_project/.env").exists()
+    uploaded.write_bytes(b"corrupt")
+    completed = subprocess.run([sys.executable, str(result.runner)], env=env, capture_output=True, text=True)
+    assert completed.returncode != 0
+    assert "checksum mismatch" in completed.stderr
 
 
 def create_sample_project(root: Path) -> None:
