@@ -20,7 +20,7 @@ def test_kaggle_uses_tool_environment_before_path(tmp_path: Path, monkeypatch: p
         executable.chmod(0o755)
     monkeypatch.setattr("krun.kaggle.sysconfig.get_path", lambda name: str(tool_bin))
     monkeypatch.setenv("PATH", str(other_bin))
-    assert KaggleClient().executable == str(tool_bin / filename)
+    assert Path(KaggleClient().executable).samefile(tool_bin / filename)
     assert KaggleClient(executable="custom-kaggle").executable == "custom-kaggle"
 
 
@@ -32,7 +32,7 @@ def test_kaggle_falls_back_to_path(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     executable.chmod(0o755)
     monkeypatch.setattr("krun.kaggle.sysconfig.get_path", lambda name: str(tmp_path / "missing"))
     monkeypatch.setenv("PATH", str(tmp_path))
-    assert KaggleClient().executable == str(executable)
+    assert Path(KaggleClient().executable).samefile(executable)
 
 
 def test_normalize_accelerator() -> None:

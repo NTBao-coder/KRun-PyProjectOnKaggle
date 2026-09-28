@@ -112,17 +112,17 @@ for ((i=1; i<${#args[@]}; i++)); do
 done
 
 mkdir -p "$HOME/.kaggle"
-tty_args=()
-if [[ -t 0 && -t 1 ]]; then tty_args=(-it)
-elif [[ ${args[0]:-} == login ]]; then tty_args=(-i); fi
-env_args=()
+# Keep this array nonempty: macOS Bash 3.2 treats empty arrays as unset with -u.
+docker_args=(run --rm)
+if [[ -t 0 && -t 1 ]]; then docker_args+=(-it)
+elif [[ ${args[0]:-} == login ]]; then docker_args+=(-i); fi
 for name in KAGGLE_API_TOKEN KAGGLE_USERNAME KAGGLE_KEY; do
-  if printenv "$name" >/dev/null 2>&1; then env_args+=(-e "$name"); fi
+  if printenv "$name" >/dev/null 2>&1; then docker_args+=(-e "$name"); fi
 done
-exec docker run --rm "${tty_args[@]}" \
+exec docker "${docker_args[@]}" \
   --user "$(id -u):$(id -g)" \
   --tmpfs "/home/krun:uid=$(id -u),gid=$(id -g),mode=700" \
   --mount "type=bind,source=$root,target=/workspace" \
   --mount "type=bind,source=$HOME/.kaggle,target=/home/krun/.kaggle" \
-  -e "KRUN_HOST_ROOT=$root" "${env_args[@]}" \
-  "$image" "${args[@]}"
+  -e "KRUN_HOST_ROOT=$root" \
+  "$image" ${args[@]+"${args[@]}"}

@@ -63,3 +63,34 @@ def test_launcher_relative_file_with_explicit_project(tmp_path: Path) -> None:
     assert completed.returncode == 0, completed.stderr
     args = json.loads(completed.stdout)
     assert args[-5:] == ["run", "/workspace/entry.py", "--project", "/workspace", "--dry-run"]
+
+
+def test_launcher_without_arguments_or_credentials(tmp_path: Path) -> None:
+    environment = fake_docker(tmp_path)
+    for name in ("KAGGLE_API_TOKEN", "KAGGLE_USERNAME", "KAGGLE_KEY"):
+        environment.pop(name, None)
+    completed = subprocess.run(
+        ["bash", str(LAUNCHER)], cwd=tmp_path, env=environment,
+        capture_output=True, text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    args = json.loads(completed.stdout)
+    assert args[:2] == ["run", "--rm"]
+    assert args[-1] == "krun:test"
+    assert "" not in args
+    assert "-it" not in args
+
+
+def test_launcher_login_keeps_stdin_and_passes_environment_names(tmp_path: Path) -> None:
+    environment = fake_docker(tmp_path)
+    environment["KAGGLE_API_TOKEN"] = "unused-test-token"
+    completed = subprocess.run(
+        ["bash", str(LAUNCHER), "login"], cwd=tmp_path, env=environment,
+        capture_output=True, text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    args = json.loads(completed.stdout)
+    assert "-i" in args
+    assert args[args.index("KAGGLE_API_TOKEN") - 1] == "-e"
+    assert "unused-test-token" not in args
+    assert args[-2:] == ["krun:test", "login"]
