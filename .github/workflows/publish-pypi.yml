@@ -1,0 +1,97 @@
+name: Publish to PyPI
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact package version to publish
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-pypi
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      UV_TOOL_DIR: ${{ runner.temp }}/krun-tools
+      UV_TOOL_BIN_DIR: ${{ runner.temp }}/krun-bin
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+      - name: Verify release version
+        run: |
+          python - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+          from krun import __version__
+
+          metadata = tomllib.loads(Path('pyproject.toml').read_text())
+          assert metadata['project']['name'] == 'krun-cli'
+          assert metadata['project']['version'] == __version__ == os.environ['RELEASE_VERSION']
+          PY
+      - run: python -m pip install -e '.[dev]'
+      - run: python -m pytest -q
+      - name: Build and test distributions
+        run: |
+          uv build --no-sources
+          uv tool install --python 3.12 --from dist/krun_cli-*-py3-none-any.whl krun-cli
+          "$UV_TOOL_DIR/krun-cli/bin/python" scripts/check_installed.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pypi-distributions
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/krun-cli/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pypi-distributions
+          path: dist/
+      - uses: astral-sh/setup-uv@v6
+      - name: Publish verified distributions
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          if [ -n "$UV_PUBLISH_TOKEN" ]; then
+            uv publish --trusted-publishing never dist/*
+          else
+            uv publish --trusted-publishing always dist/*
+          fi
+
+  verify:
+    needs: publish
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      UV_TOOL_DIR: ${{ runner.temp }}/krun-pypi-tools
+      UV_TOOL_BIN_DIR: ${{ runner.temp }}/krun-pypi-bin
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+      - name: Install published version from PyPI
+        run: |
+          uv tool install --python 3.12 --refresh --from "krun-cli==$RELEASE_VERSION" krun-cli
+          "$UV_TOOL_DIR/krun-cli/bin/python" scripts/check_installed.py

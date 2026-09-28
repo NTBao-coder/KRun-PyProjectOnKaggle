@@ -1,0 +1,8 @@
+include CONTRIBUTING.md Dockerfile .dockerignore requirements-docker.txt krun.ps1
+include bin/krun scripts/install.sh scripts/check_installed.py
+recursive-include docs *.md
+recursive-include tests *.py
+recursive-include examples/cpu_multi_entry *.py *.yaml *.txt *.md .gitignore .krunignore
+prune examples/cpu_multi_entry/outputs
+prune examples/cpu_multi_entry/.krun
+global-exclude __pycache__ *.py[cod]

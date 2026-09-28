@@ -4,86 +4,94 @@ Run Python scripts, modules, and notebooks on Kaggle from your terminal.
 KRun packages your project, submits a private job, follows its logs, and downloads
 the results. You do not need a file named `main.py` or a `krun.yaml` configuration.
 
-**Docker runs the CLI on your computer. Kaggle runs your project.**
-With the Docker workflow, your computer does not need Python or a GPU.
+**KRun runs locally; your project runs on Kaggle.** No local GPU or Docker is
+required. KRun needs Python 3.11+; uv can provision a compatible interpreter.
 Kaggle account quotas, runtime limits, and accelerator availability still apply.
 
-## Step 1: Clone, start Docker, and sign in
+## Step 1: Install with uv and sign in
 
-You need Git, Docker, and a Kaggle account. Start Docker Desktop on Windows/macOS
-or Docker Engine on Linux, then check:
-
-```bash
-docker info
-```
-
-If this fails, fix Docker access before continuing.
-
-### Linux / macOS
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) first.
+Until a verified release is published to PyPI, install directly from this repository:
 
 ```bash
-git clone https://github.com/nhminh107/KRun-PyProjectOnKaggle.git
-cd KRun-PyProjectOnKaggle
-./bin/krun login
-./bin/krun doctor
+uv tool install --python 3.12 git+https://github.com/nhminh107/KRun-PyProjectOnKaggle.git
 ```
 
-On first use, the launcher builds the Docker image. This needs internet access
-and may take a few minutes. Login prints a URL: open it in your browser,
-authorize your Kaggle account, and paste the verification code into the terminal.
-Existing credentials in `~/.kaggle` are reused.
+This requires Git and installs the revision currently on the default branch.
+For a local checkout (including changes not yet pushed):
 
-**Run the `./bin/krun` commands below from the cloned KRun repository.**
-You do not need to switch into an external project. Replace `/path/to/...`
-with real paths on your computer, and quote paths containing spaces.
-
-### Windows PowerShell
-
-Start Docker Desktop in Linux-container mode:
-
-```powershell
-git clone https://github.com/nhminh107/KRun-PyProjectOnKaggle.git
-cd KRun-PyProjectOnKaggle
-.\krun.ps1 login
-.\krun.ps1 doctor
-.\krun.ps1 demo sales-report
+```bash
+uv tool install --python 3.12 .
 ```
 
-For the examples below, replace `./bin/krun` with `.krun.ps1`.
-If execution policy blocks the script, use
-`powershell -ExecutionPolicy Bypass -File .\krun.ps1 login`;
-this changes policy only for that process.
-Linux has been tested locally. Windows/macOS CI is configured, but its results
-have not yet been verified.
+After `krun-cli` has been published to PyPI, the short installation command is:
+
+```bash
+uv tool install krun-cli
+```
+
+The package name is **krun-cli**; the command is **krun**. uv keeps the CLI and
+its dependencies in an isolated tool environment, separate from your workload's
+venv or Conda environment. You do not need to activate it before each use.
+If `krun` is not found, run `uv tool update-shell` and restart your terminal.
+If you previously installed the Docker symlink with `scripts/install.sh`, remove
+that specific symlink or adjust PATH before installing the package.
+
+```bash
+krun --version
+krun login
+krun doctor
+```
+
+Login prints a URL: open it in your browser, authorize your Kaggle account,
+and paste the verification code into the terminal. Existing credentials in
+`~/.kaggle` are reused. Run commands from your own project or use `--project`.
+The same commands work in PowerShell; use one line instead of Bash's `\` line
+continuations. Linux is verified locally; Windows/macOS checks are configured in CI.
 
 ## Step 2: Try a small CPU demo
 
 This bundled demo does not need a GPU, model downloads, or external data:
 
 ```bash
-./bin/krun demo sales-report
+krun demo sales-report
 ```
 
 Expected results: `total_revenue: "213.00"`, eight paid orders, and two
 rejected rows. After `Completed successfully.`, find the four reports here:
 
 ```text
-examples/sales_report/.krun/jobs/<job-id>/output/krun_outputs/outputs/
+krun-demo-sales-report/.krun/jobs/<job-id>/output/krun_outputs/outputs/
 ```
 
-Replace `<job-id>` with the ID printed for your run.
+Replace `<job-id>` with the ID printed for your run. Each demo creates a new
+writable project in the current directory (`krun-demo-sales-report`,
+`krun-demo-module`, or `krun-demo-notebook`). It never modifies the installed package.
+Existing destinations are rejected to protect edits and results. Choose another
+location with `--destination ./another-demo`, or create files without submitting:
+
+```bash
+krun demo sales-report --copy-only
+krun run main.py --project ./krun-demo-sales-report --dry-run
+krun status --project ./krun-demo-sales-report
+```
+
+Use `--copy-only` instead of the initial demo command when you only want files.
+To preview a new demo's upload, use `krun demo sales-report --dry-run`; this
+creates the demo directory but does not authenticate or submit a job.
 
 ### Test two entrypoints, shared imports, and requirements.txt
 
-The [multi-entry CPU demo](examples/cpu_multi_entry/README.md) contains YAML data,
+The [multi-entry CPU demo](examples/cpu_multi_entry/README.md) in the source
+repository contains YAML data,
 a `requirements.txt`, and a shared `inventory/` package.
 It has no `main.py` or `krun.yaml`:
 
 ```bash
-./bin/krun run examples/cpu_multi_entry/stock_report.py \
+krun run examples/cpu_multi_entry/stock_report.py \
   --project examples/cpu_multi_entry --internet
 
-./bin/krun run examples/cpu_multi_entry/reorder_report.py \
+krun run examples/cpu_multi_entry/reorder_report.py \
   --project examples/cpu_multi_entry --internet
 ```
 
@@ -106,7 +114,7 @@ Add `--dry-run` to preview packaging without submitting a job.
 You do not need to turn your code into a notebook or rename it to `main.py`:
 
 ```bash
-./bin/krun run /path/to/my-project/report.py \
+krun run /path/to/my-project/report.py \
   --project /path/to/my-project --internet
 ```
 
@@ -118,7 +126,7 @@ CPU is the default unless your YAML configuration selects another accelerator.
 To request a GPU:
 
 ```bash
-./bin/krun run /path/to/my-project/train.py \
+krun run /path/to/my-project/train.py \
   --project /path/to/my-project --gpu T4 --internet --timeout 14400
 ```
 
@@ -129,7 +137,7 @@ the accelerator correctly; requesting a GPU does not make CPU-only code use it.
 Put KRun options before `--` and your script's arguments after it:
 
 ```bash
-./bin/krun run /path/to/my-project/train.py \
+krun run /path/to/my-project/train.py \
   --project /path/to/my-project --gpu T4 --internet -- --epochs 10
 ```
 
@@ -138,13 +146,13 @@ Your script must implement `--epochs`; KRun only forwards the argument.
 ### Modules and notebooks
 
 ```bash
-./bin/krun demo module
-./bin/krun demo notebook
+krun demo module
+krun demo notebook
 
-./bin/krun run -m my_package.report \
+krun run -m my_package.report \
   --project /path/to/my-project -- --count 10
 
-./bin/krun run /path/to/my-project/analysis.ipynb \
+krun run /path/to/my-project/analysis.ipynb \
   --project /path/to/my-project --internet --cell-timeout 900
 ```
 
@@ -173,11 +181,11 @@ it looks for a root or suitable nested `pyproject.toml`. If multiple projects
 are found, choose explicitly:
 
 ```bash
-./bin/krun run /path/to/my-project/report.py \
+krun run /path/to/my-project/report.py \
   --project /path/to/my-project \
   --requirements /path/to/my-project/requirements.txt --internet
 
-./bin/krun run /path/to/my-project/backend/report.py \
+krun run /path/to/my-project/backend/report.py \
   --project /path/to/my-project \
   --dependency-project /path/to/my-project/backend --internet
 ```
@@ -185,28 +193,27 @@ are found, choose explicitly:
 If you only have a Python file, request packages directly:
 
 ```bash
-./bin/krun run /path/to/my-project/report.py \
+krun run /path/to/my-project/report.py \
   --project /path/to/my-project --internet --package 'PyYAML==6.0.2'
 ```
 
 Repeat `--package` for additional libraries. They install **on Kaggle**,
-not in your host Python or the local CLI image. Enable `--internet` when
+not in your local Python or the CLI tool environment. Enable `--internet` when
 installing packages or downloading models/data; use `--no-internet` for offline jobs.
 
 Pinning versions helps reproducibility, but they must still match Kaggle's Python,
 PyTorch, CUDA, and existing packages. Successful installation does not guarantee
-successful execution. Changing workload dependencies **does not require a Docker rebuild**.
+successful execution. Changing workload dependencies **does not require reinstalling KRun**.
 
 ## Step 5: Preview before submitting
 
 ```bash
-./bin/krun run /path/to/my-project/report.py \
+krun run /path/to/my-project/report.py \
   --project /path/to/my-project --internet --dry-run
 ```
 
 Dry-run lists the root, entrypoint, dependencies, accelerator, size, and files
-to upload. It needs no Kaggle login and creates no job. The launcher still needs
-Docker and may build its image on first use.
+to upload. It needs no Kaggle login and creates no job.
 
 **Dry-run does not execute your code, install remote dependencies, test CUDA,
 or guarantee training will succeed.** Review the list, then remove `--dry-run`
@@ -214,12 +221,12 @@ to submit. `doctor` checks local setup and authentication, not quota or GPU avai
 
 ## Step 6: Read logs and find results
 
-From the KRun repository, select the project you ran:
+Select the project you ran:
 
 ```bash
-./bin/krun jobs --project /path/to/my-project
-./bin/krun status --project /path/to/my-project
-./bin/krun logs --project /path/to/my-project
+krun jobs --project /path/to/my-project
+krun status --project /path/to/my-project
+krun logs --project /path/to/my-project
 ```
 
 Commands default to the newest local job **in that project**.
@@ -246,7 +253,7 @@ final traceback in the log.
 KRun collects the project's `outputs/` directory by default. For another location:
 
 ```bash
-./bin/krun run /path/to/my-project/report.py \
+krun run /path/to/my-project/report.py \
   --project /path/to/my-project --internet --output reports
 ```
 
@@ -262,8 +269,8 @@ submits without waiting. `wait` resumes monitoring **without creating another jo
 and `output` downloads artifacts again:
 
 ```bash
-./bin/krun wait --project /path/to/my-project --timeout 14400
-./bin/krun output --project /path/to/my-project
+krun wait --project /path/to/my-project --timeout 14400
+krun output --project /path/to/my-project
 ```
 
 `--timeout` limits local monitoring (one hour by default), not Kaggle runtime
@@ -272,42 +279,35 @@ notebook cell. Temporarily unavailable logs do not stop monitoring.
 Read/download requests retry transient failures; submission is not retried
 automatically to avoid duplicate jobs.
 
-## Step 7: Update KRun and Docker
+## Step 7: Update or uninstall
 
-From the KRun repository:
-
-```bash
-git pull
-./bin/krun build
-./bin/krun doctor
-```
-
-You normally **do not need to delete the old image**. The launcher rebuilds when
-CLI source or dependencies change; `build` explicitly requests a build.
-If you want to remove and recreate the local image, first check for containers
-using it:
+For a PyPI installation:
 
 ```bash
-docker ps -a --filter ancestor=krun:local
-docker image rm krun:local
-./bin/krun build
+uv tool upgrade krun-cli
 ```
 
-Only the `krun:local` image is targeted, not your project or results.
-Docker may refuse removal if a container uses the image.
-Do not force removal or use system prune for this workflow.
+For a Git installation, reinstall from the latest source:
+
+```bash
+uv tool install --reinstall git+https://github.com/nhminh107/KRun-PyProjectOnKaggle.git
+```
+
+For a local checkout, update the checkout and run `uv tool install --reinstall .`.
+Remove the CLI with `uv tool uninstall krun-cli`. Project files and `.krun` job
+history remain in your project directories.
 
 ## Troubleshooting
 
-- **Docker is unavailable / permission denied:** check `docker info`, Docker
-  access, and project ownership. Do not make credentials public.
-- **Bind mount error:** use a real folder shared with Docker Desktop.
-  The launcher does not support mount paths containing commas.
-- **Expired credentials:** run `./bin/krun login --force`, then `./bin/krun auth status`.
+- **Command not found:** run `uv tool update-shell`, restart your terminal, and
+  check `uv tool list`. Ensure an old Docker launcher is not earlier on PATH.
+- **Kaggle CLI missing:** reinstall KRun with dependencies using the installation
+  source above. No separate global Kaggle installation is required.
+- **Expired credentials:** run `krun login --force`, then `krun auth status`.
 - **Missing imports:** declare dependencies and enable internet. For local
   modules, check `--project` and the dry-run file list.
 - **CUDA/bitsandbytes/Triton errors:** choose versions compatible with Kaggle's
-  environment. Rebuilding local Docker does not change remote CUDA.
+  environment. Reinstalling local KRun does not change remote CUDA.
   Do not pin an old version just because a tutorial uses it.
 - **W&B says `No API key configured`:** if you do not use W&B, set
   `report_to="none"` in your script's `TrainingArguments`.
@@ -323,18 +323,6 @@ Do not force removal or use system prune for this workflow.
 
 ## Advanced options
 
-### Optional short command
-
-```bash
-./scripts/install.sh
-```
-
-This creates a symlink at `~/.local/bin/krun`; that directory must be on PATH.
-It does not overwrite an existing command or edit your shell profile.
-Keep the cloned repository in place. You can then run `krun run report.py`
-from your own project. In PowerShell, use the full launcher path:
-`& 'C:\tools\KRun-PyProjectOnKaggle\krun.ps1' run report.py`.
-
 ### Inputs and upload limits
 
 The limit is 20 MB before compression; errors list the largest files.
@@ -342,7 +330,7 @@ Small project inputs are uploaded with your code. `--input` includes files
 excluded by user ignore rules, but does not bypass size limits or secret exclusions:
 
 ```bash
-./bin/krun run /path/to/my-project/report.py \
+krun run /path/to/my-project/report.py \
   --project /path/to/my-project --input /path/to/my-project/data/sample.csv
 ```
 
@@ -358,12 +346,11 @@ then requirements, pyproject, or Git markers, and finally uses the script's fold
 Use `--project` for multi-directory projects.
 
 `init` writes YAML into the working directory and does not accept `--project`.
-Switch into your project and call the launcher by its full path:
+Switch into your project:
 
 ```bash
 cd /path/to/my-project
-/path/to/KRun-PyProjectOnKaggle/bin/krun init --entrypoint report.py
-cd /path/to/KRun-PyProjectOnKaggle
+krun init --entrypoint report.py
 ```
 
 CLI options override YAML, then discovery/defaults apply. Example `krun.yaml`:
@@ -390,8 +377,8 @@ or `.krun`. Symlinks are not uploaded or followed during artifact collection.
 
 ### Credentials, secrets, and ignore files
 
-The launcher mounts `~/.kaggle` read-write for OAuth refresh and forwards
-existing `KAGGLE_API_TOKEN`, `KAGGLE_USERNAME`, and `KAGGLE_KEY` variables.
+KRun uses the Kaggle CLI in its tool environment. Authentication reads
+`~/.kaggle` and existing `KAGGLE_API_TOKEN`, `KAGGLE_USERNAME`, and `KAGGLE_KEY` variables.
 Token users may need `KAGGLE_USERNAME` or `--owner` if the username cannot be resolved.
 Never put tokens in command arguments, source, YAML, or Git.
 
@@ -407,24 +394,39 @@ Root `.gitignore`/`.krunignore` support a subset of globs, directory patterns,
 and ordered `!` negations, not full Git semantics.
 Nested ignore files and escaped patterns are not supported.
 
-### Release images and development
+### Optional Docker workflow
 
-Only after a release image has actually been published, set `KRUN_IMAGE` to
-`ghcr.io/nhminh107/krun-pyprojectonkaggle:<release-tag>` to pull instead of building.
-Do not assume this image already exists. Custom images are not rebuilt;
-use `docker pull` to update them.
-CLI dependencies are pinned in `requirements-docker.txt`; resolved versions
-are recorded at `/opt/venv/resolved-requirements.txt`.
-
-Native development requires Python 3.11+. This is not required for Docker users:
+Docker remains available for users who prefer a containerized CLI. Clone the
+repository, start Docker Engine/Desktop, and use `./bin/krun` on Linux/macOS
+or `.\krun.ps1` in PowerShell:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
+./bin/krun login
+./bin/krun demo sales-report --dry-run
+./bin/krun run /path/to/my-project/train.py --project /path/to/my-project --gpu T4 --internet
+```
+
+Run these launchers from the repository, or call them by their absolute path.
+They build the image on first use, mount the selected project and `~/.kaggle`,
+and forward Kaggle authentication environment variables. Docker Desktop must
+use Linux containers. Mount paths containing commas are unsupported.
+Use `./bin/krun build` to explicitly rebuild. A custom `KRUN_IMAGE` can select
+an already published image; do not assume a release image exists.
+Docker dependency pins live in `requirements-docker.txt`.
+
+### Development and releases
+
+Use Python 3.11+ in your development environment:
+
+```bash
 python -m pip install -e '.[dev]'
 python -m pytest -q
 ```
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for build, installed-wheel checks, and
+release instructions. The package includes its demo templates, so installed
+users do not need a repository checkout. Distribution checks must pass before
+publishing; this repository change alone does not publish anything to PyPI.
+
 Normal CI does not call Kaggle. Local tests and dry-runs do not replace real GPU
-or workload tests. See [design notes](docs/design.md),
-[contributing](CONTRIBUTING.md), and the [MIT License](LICENSE).
+or workload tests. See [design notes](docs/design.md) and the [MIT License](LICENSE).

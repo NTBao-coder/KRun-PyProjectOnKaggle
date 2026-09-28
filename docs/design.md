@@ -85,6 +85,16 @@ Kaggle credentials into the workload archive.
 
 ## Distribution
 
+The primary distribution is the `krun-cli` Python package exposing `krun`.
+`uv tool install` gives it an isolated environment. Kaggle executable lookup
+prefers the current Python environment's scripts directory before PATH, so a
+separate global Kaggle install is unnecessary. Templates are package resources;
+`krun demo` copies them into a new writable project and refuses to overwrite an
+existing destination. Installed package directories never store job state.
+CI builds a source distribution, builds its wheel, and tests that installed
+wheel outside the checkout on each supported CI platform.
+
+Docker is optional. Both launchers delegate demos to the native command.
 The launcher needs Docker and Bash/PowerShell, not host Python. Local image
 fingerprints detect source/runtime-lock changes. A custom `KRUN_IMAGE` selects
 a prebuilt image without rebuilding it. Credentials remain on the host; a

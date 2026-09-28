@@ -8,10 +8,13 @@ from typing import Optional
 
 import typer
 from rich.console import Console
+from typer.core import TyperCommand
+from typer.main import get_command
 
 from krun import __version__
 from krun.config import CONFIG_FILE, write_default_config
 from krun.errors import KrunError
+from krun.demos import DemoName, create_demo
 from krun.jobs import Job, JobStore, new_kernel_slug
 from krun.kaggle import KaggleClient, kaggle_username, normalize_accelerator, write_kernel_metadata
 from krun.packaging import package_files, prepare_workspace
@@ -123,7 +126,7 @@ def login(force: bool = typer.Option(False, "--force", help="Sign in again.")) -
     """Sign in once using a browser verification code."""
     client = KaggleClient()
     if not client.executable:
-        raise KrunError("Kaggle CLI is missing. Use the Docker launcher.")
+        raise KrunError("Kaggle CLI is missing. Reinstall KRun with its declared dependencies.")
     client.login(force)
 
 
@@ -140,7 +143,7 @@ def doctor() -> None:
     """Check runtime, write access and Kaggle authentication."""
     console.print(f"KRun {__version__}; workspace: {host_path(Path.cwd())}")
     if not os.access(Path.cwd(), os.W_OK):
-        raise KrunError("Workspace is not writable. Check mount permissions and UID/GID.")
+        raise KrunError("Workspace is not writable. Check directory permissions.")
     auth_status()
     console.print("Checks passed. Accelerator availability and quota are checked when Kaggle accepts the job.")
 
@@ -340,6 +343,44 @@ def output(
     client = KaggleClient()
     client.validate_environment()
     _download(client, store, job, path.resolve() if path else store.directory(job.job_id) / "output")
+
+
+class DemoCommand(TyperCommand):
+    """Keep the script argument boundary when forwarding to the run command."""
+
+    def parse_args(self, ctx: typer.Context, args: list[str]) -> list[str]:
+        if "--" in args:
+            boundary = args.index("--")
+            ctx.meta["demo_script_args"] = args[boundary:]
+            args = args[:boundary]
+        return super().parse_args(ctx, args)
+
+
+@app.command(cls=DemoCommand, context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def demo(
+    ctx: typer.Context,
+    name: DemoName = typer.Argument(DemoName.sales_report),
+    destination: Optional[Path] = typer.Option(
+        None, "--destination", help="New directory for the demo (must not exist)."
+    ),
+    copy_only: bool = typer.Option(False, "--copy-only", help="Create files without submitting a job."),
+) -> None:
+    """Copy a bundled demo, then run it. Additional options are passed to 'run'."""
+    extra = list(ctx.args)
+    # Project and entrypoint are fixed by the selected template.
+    for value in extra:
+        if value.split("=", 1)[0] in {"--project", "--module", "-m"}:
+            raise KrunError("Demo selects its own project and entrypoint. Use 'krun run' for custom projects.")
+    extra.extend(ctx.meta.get("demo_script_args", []))
+    if copy_only and extra:
+        raise KrunError("--copy-only does not accept run options or script arguments.")
+    root, entrypoint = create_demo(name, destination)
+    console.print(f"Demo project: {host_path(root)}")
+    if not copy_only:
+        get_command(app).main(
+            args=["run", *entrypoint, "--project", str(root), *extra],
+            prog_name="krun", standalone_mode=False,
+        )
 
 
 def run_cli() -> None:

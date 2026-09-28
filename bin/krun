@@ -17,7 +17,7 @@ docker info >/dev/null 2>&1 || fail "Docker is not running or access is denied. 
 
 # A source fingerprint prevents a stale image from running after git pull.
 fingerprint=$(
-  { find "$repo/krun" -type f -name '*.py' | LC_ALL=C sort | while IFS= read -r file; do cksum "$file"; done
+  { find "$repo/krun" -type f ! -path '*/__pycache__/*' ! -path '*/.krun/*' ! -path '*/outputs/*' | LC_ALL=C sort | while IFS= read -r file; do cksum "$file"; done
     cksum "$repo/Dockerfile" "$repo/pyproject.toml" "$repo/requirements-docker.txt"
   } | cksum | awk '{print $1 "-" $2}'
 )
@@ -34,20 +34,6 @@ elif [[ -z ${KRUN_IMAGE:-} ]]; then
 fi
 
 args=("$@")
-if [[ ${args[0]:-} == demo ]]; then
-  case ${args[1]:-sales-report} in
-    sales-report) demo_root="$repo/examples/sales_report"; target=main.py ;;
-    module) demo_root="$repo/examples/module_job"; target="" ;;
-    notebook) demo_root="$repo/examples/notebook_job"; target=report.ipynb ;;
-    *) fail "Choose demo sales-report, module, or notebook." ;;
-  esac
-  extra=()
-  if (( ${#args[@]} > 2 )); then extra=("${args[@]:2}"); fi
-  cd "$demo_root"
-  if [[ -n "$target" ]]; then args=(run "$target" --project "$demo_root" "${extra[@]}");
-  else args=(run -m report_job --project "$demo_root" "${extra[@]}"); fi
-fi
-
 original=$(pwd -P)
 root=$original
 target=""

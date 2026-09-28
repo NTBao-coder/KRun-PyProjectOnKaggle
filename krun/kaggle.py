@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 import subprocess
+import sysconfig
 import time
 from pathlib import Path
 
@@ -22,7 +23,10 @@ ACCELERATORS = {
 
 class KaggleClient:
     def __init__(self, executable: str | None = None, verbose: bool = False) -> None:
-        self.executable = executable or shutil.which("kaggle") or ""
+        # uv exposes KRun's entrypoint, but dependency scripts need not be on PATH.
+        scripts = sysconfig.get_path("scripts")
+        bundled = shutil.which("kaggle", path=scripts) if scripts else None
+        self.executable = executable or bundled or shutil.which("kaggle") or ""
         self.verbose = verbose
 
     def validate_environment(self) -> None:

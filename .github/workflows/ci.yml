@@ -20,6 +20,20 @@ jobs:
       - run: python -m pip install -e ".[dev]"
       - run: python -m pytest -q
       - run: python -m compileall -q krun tests
+      - uses: astral-sh/setup-uv@v6
+      - name: Build sdist and wheel, then test the installed tool
+        shell: bash
+        env:
+          UV_TOOL_DIR: ${{ runner.temp }}/krun-tools
+          UV_TOOL_BIN_DIR: ${{ runner.temp }}/krun-bin
+        run: |
+          uv build
+          uv tool install --python '${{ matrix.python }}' --from dist/krun_cli-*-py3-none-any.whl krun-cli
+          if [ '${{ runner.os }}' = Windows ]; then
+            "$UV_TOOL_DIR/krun-cli/Scripts/python.exe" scripts/check_installed.py
+          else
+            "$UV_TOOL_DIR/krun-cli/bin/python" scripts/check_installed.py
+          fi
       - name: Parse PowerShell launcher
         shell: pwsh
         run: |

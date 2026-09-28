@@ -6,7 +6,7 @@ $CliArgs = @($args)
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw 'Install Docker Desktop first.' }
 docker info *> $null
 if ($LASTEXITCODE -ne 0) { throw 'Start Docker Desktop in Linux-container mode and retry docker info.' }
-$Files = @(Get-ChildItem "$Repo/krun" -Filter '*.py' -Recurse | Sort-Object FullName | ForEach-Object { $_.FullName })
+$Files = @(Get-ChildItem "$Repo/krun" -File -Recurse | Where-Object { $_.FullName -notmatch '[\\/](__pycache__|\.krun|outputs)[\\/]' } | Sort-Object FullName | ForEach-Object { $_.FullName })
 $Files += @("$Repo/Dockerfile", "$Repo/pyproject.toml", "$Repo/requirements-docker.txt")
 $Hashes = ($Files | ForEach-Object { (Get-FileHash $_ -Algorithm SHA256).Hash }) -join ''
 $Sha = [System.Security.Cryptography.SHA256]::Create()
@@ -28,17 +28,6 @@ if ($LASTEXITCODE -ne 0) {
     if ($Installed -ne $Fingerprint) { Build-KRun }
 }
 
-if ($CliArgs.Count -gt 0 -and $CliArgs[0] -eq 'demo') {
-    $Name = if ($CliArgs.Count -gt 1) { $CliArgs[1] } else { 'sales-report' }
-    $Extra = if ($CliArgs.Count -gt 2) { @($CliArgs[2..($CliArgs.Count - 1)]) } else { @() }
-    switch ($Name) {
-        'sales-report' { $DemoRoot = "$Repo/examples/sales_report"; $CliArgs = @('run', 'main.py', '--project', $DemoRoot) + $Extra }
-        'module' { $DemoRoot = "$Repo/examples/module_job"; $CliArgs = @('run', '-m', 'report_job', '--project', $DemoRoot) + $Extra }
-        'notebook' { $DemoRoot = "$Repo/examples/notebook_job"; $CliArgs = @('run', 'report.ipynb', '--project', $DemoRoot) + $Extra }
-        default { throw 'Choose demo sales-report, module, or notebook.' }
-    }
-    Set-Location $DemoRoot
-}
 $Original = (Get-Location).Path
 $Explicit = $null
 $Target = $null

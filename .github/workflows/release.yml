@@ -1,4 +1,4 @@
-name: Publish Docker image
+name: Build Python distributions and publish Docker image
 on:
   release:
     types: [published]
@@ -15,6 +15,19 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install -e '.[dev]'
       - run: python -m pytest -q
+      - uses: astral-sh/setup-uv@v6
+      - name: Build and verify Python distributions
+        env:
+          UV_TOOL_DIR: ${{ runner.temp }}/krun-tools
+          UV_TOOL_BIN_DIR: ${{ runner.temp }}/krun-bin
+        run: |
+          uv build
+          uv tool install --from dist/krun_cli-*-py3-none-any.whl krun-cli
+          "$UV_TOOL_DIR/krun-cli/bin/python" scripts/check_installed.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-distributions
+          path: dist/
   image:
     needs: test
     runs-on: ubuntu-latest
