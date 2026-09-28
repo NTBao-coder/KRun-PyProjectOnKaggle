@@ -299,6 +299,12 @@ history remain in your project directories.
 
 ## Troubleshooting
 
+- **Windows `'charmap' codec can't encode` after a job completes:** update KRun.
+  The CLI uses UTF-8 for Kaggle subprocesses so Vietnamese logs and filenames
+  work with Windows pipes. To recover using an older installation, set
+  `$env:PYTHONUTF8 = "1"` and `$env:PYTHONIOENCODING = "utf-8"` in PowerShell,
+  then run `krun output <job-id> --project "D:\path\to\project"`.
+  A remote `COMPLETE` job does not need to be submitted again.
 - **Command not found:** run `uv tool update-shell`, restart your terminal, and
   check `uv tool list`. Ensure an old Docker launcher is not earlier on PATH.
 - **Kaggle CLI missing:** reinstall KRun with dependencies using the installation

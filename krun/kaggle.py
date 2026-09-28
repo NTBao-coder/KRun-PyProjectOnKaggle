@@ -21,6 +21,11 @@ ACCELERATORS = {
 }
 
 
+def _subprocess_environment() -> dict[str, str]:
+    """Use UTF-8 for Kaggle's Python runtime, including redirected Windows I/O."""
+    return {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
+
+
 class KaggleClient:
     def __init__(self, executable: str | None = None, verbose: bool = False) -> None:
         # uv exposes KRun's entrypoint, but dependency scripts need not be on PATH.
@@ -85,7 +90,7 @@ class KaggleClient:
         command = [self.executable, "auth", "login", "--no-launch-browser"]
         if force:
             command.append("--force")
-        completed = subprocess.run(command, check=False)
+        completed = subprocess.run(command, check=False, env=_subprocess_environment())
         if completed.returncode:
             if force or not has_credentials():
                 raise CommandError("Kaggle login failed. Retry 'krun login'.")
@@ -102,7 +107,7 @@ class KaggleClient:
     def follow_logs(self, kernel: str) -> None:
         command = [self.executable, "kernels", "logs", "--follow", kernel]
         try:
-            completed = subprocess.run(command, check=False)
+            completed = subprocess.run(command, check=False, env=_subprocess_environment())
         except OSError as exc:
             raise CommandError(f"Could not start Kaggle CLI: {exc}") from exc
         if completed.returncode != 0:
@@ -128,7 +133,10 @@ class KaggleClient:
         attempts = 1 if args[:2] == ["kernels", "push"] else 3
         for attempt in range(attempts):
             try:
-                completed = subprocess.run(command, text=True, capture_output=True, check=False, timeout=120)
+                completed = subprocess.run(
+                    command, text=True, encoding="utf-8", capture_output=True,
+                    check=False, timeout=120, env=_subprocess_environment(),
+                )
             except subprocess.TimeoutExpired as exc:
                 if attempt + 1 < attempts:
                     continue
